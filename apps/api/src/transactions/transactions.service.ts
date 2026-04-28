@@ -54,7 +54,7 @@ export class TransactionsService {
       where.description = { contains: search, mode: 'insensitive' };
     }
 
-    const [data, total, aggregate] = await Promise.all([
+    const [data, total, aggReceitas, aggDespesas] = await Promise.all([
       this.prisma.transaction.findMany({
         where,
         include: { category: true, paymentMethod: true },
@@ -63,12 +63,14 @@ export class TransactionsService {
         take: limit,
       }),
       this.prisma.transaction.count({ where }),
-      this.prisma.transaction.aggregate({ where, _sum: { amount: true } }),
+      this.prisma.transaction.aggregate({ where: { ...where, type: 'RECEITA' }, _sum: { amount: true } }),
+      this.prisma.transaction.aggregate({ where: { ...where, type: 'DESPESA' }, _sum: { amount: true } }),
     ]);
 
     return {
       data, total, page, limit, pages: Math.ceil(total / limit),
-      totalAmount: Number(aggregate._sum.amount ?? 0),
+      totalReceitas: Number(aggReceitas._sum.amount ?? 0),
+      totalDespesas: Number(aggDespesas._sum.amount ?? 0),
     };
   }
 

@@ -22,7 +22,8 @@ interface Transaction {
 interface TransactionsResponse {
   data: Transaction[];
   total: number;
-  totalAmount: number;
+  totalReceitas: number;
+  totalDespesas: number;
   page: number;
   pages: number;
 }
@@ -241,15 +242,19 @@ export default function TransactionsPage() {
             <span className="text-xs text-slate-500">
               {data.total} {data.total === 1 ? 'lançamento' : 'lançamentos'} encontrados
             </span>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Total:</span>
-              <span className={`text-sm font-bold ${
-                filters.type === 'RECEITA' ? 'text-green-700' :
-                filters.type === 'DESPESA' ? 'text-red-700' : 'text-slate-800'
-              }`}>
-                {filters.type === 'DESPESA' ? '−' : filters.type === 'RECEITA' ? '+' : ''}
-                {formatCurrency(data.totalAmount)}
-              </span>
+            <div className="flex items-center gap-4">
+              {filters.type === 'RECEITA' ? (
+                <span className="text-sm font-bold text-green-700">+{formatCurrency(data.totalReceitas)}</span>
+              ) : filters.type === 'DESPESA' ? (
+                <span className="text-sm font-bold text-red-700">−{formatCurrency(data.totalDespesas)}</span>
+              ) : filters.type === '' && !hasActiveFilters ? (
+                <span className="text-sm font-bold text-slate-400">{formatCurrency(0)}</span>
+              ) : (
+                <>
+                  <span className="text-xs text-slate-500">Rec: <span className="font-bold text-green-700">+{formatCurrency(data.totalReceitas)}</span></span>
+                  <span className="text-xs text-slate-500">Desp: <span className="font-bold text-red-700">−{formatCurrency(data.totalDespesas)}</span></span>
+                </>
+              )}
             </div>
           </div>
         )}
