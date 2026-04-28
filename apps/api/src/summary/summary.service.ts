@@ -80,7 +80,7 @@ export class SummaryService {
     const despesasFixas = Number(despesasFixasResult._sum.amount ?? 0);
     const despesasEsporadicas = Number(despesasEsporadicasResult._sum.amount ?? 0);
     const despesasTerceiros = Number(despesasTerceirosResult._sum.amount ?? 0);
-    const totalDespesas = despesasFixas + despesasEsporadicas + despesasTerceiros;
+    const totalDespesas = despesasFixas + despesasEsporadicas;
     const saldo = receitas - totalDespesas;
 
     return {
