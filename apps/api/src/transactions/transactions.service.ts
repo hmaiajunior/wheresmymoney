@@ -48,7 +48,7 @@ export class TransactionsService {
       where.description = { contains: search, mode: 'insensitive' };
     }
 
-    const [data, total] = await Promise.all([
+    const [data, total, aggregate] = await Promise.all([
       this.prisma.transaction.findMany({
         where,
         include: { category: true, paymentMethod: true },
@@ -57,9 +57,13 @@ export class TransactionsService {
         take: limit,
       }),
       this.prisma.transaction.count({ where }),
+      this.prisma.transaction.aggregate({ where, _sum: { amount: true } }),
     ]);
 
-    return { data, total, page, limit, pages: Math.ceil(total / limit) };
+    return {
+      data, total, page, limit, pages: Math.ceil(total / limit),
+      totalAmount: Number(aggregate._sum.amount ?? 0),
+    };
   }
 
   async findOne(id: string, userId: string) {

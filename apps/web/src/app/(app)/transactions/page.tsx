@@ -22,6 +22,7 @@ interface Transaction {
 interface TransactionsResponse {
   data: Transaction[];
   total: number;
+  totalAmount: number;
   page: number;
   pages: number;
 }
@@ -197,6 +198,24 @@ export default function TransactionsPage() {
 
       {/* Tabela */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* Totalizador */}
+        {data && (
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <span className="text-xs text-slate-500">
+              {data.total} {data.total === 1 ? 'lançamento' : 'lançamentos'} encontrados
+            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">Total:</span>
+              <span className={`text-sm font-bold ${
+                filters.type === 'RECEITA' ? 'text-green-700' :
+                filters.type === 'DESPESA' ? 'text-red-700' : 'text-slate-800'
+              }`}>
+                {filters.type === 'DESPESA' ? '−' : filters.type === 'RECEITA' ? '+' : ''}
+                {formatCurrency(data.totalAmount)}
+              </span>
+            </div>
+          </div>
+        )}
         {isLoading ? (
           <div className="p-8 text-center text-slate-400">Carregando...</div>
         ) : !data?.data.length ? (
