@@ -10,9 +10,10 @@ export class SummaryController {
   @Post('generate-next-cycle')
   generateNextCycle(
     @Request() req: { user: { id: string } },
-    @Body() body: { targetMonth: number; targetYear: number },
+    @Body('targetMonth') targetMonth: number,
+    @Body('targetYear') targetYear: number,
   ) {
-    return this.summaryService.generateNextCycle(req.user.id, body.targetMonth, body.targetYear);
+    return this.summaryService.generateNextCycle(req.user.id, Number(targetMonth), Number(targetYear));
   }
 
   @Get(':year/:month')

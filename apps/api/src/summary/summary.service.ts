@@ -110,10 +110,14 @@ export class SummaryService {
     const baseMonth = targetMonth === 1 ? 12 : targetMonth - 1;
     const baseYear = targetMonth === 1 ? targetYear - 1 : targetYear;
 
-    // Verifica se já existe algum lançamento de despesa no ciclo alvo
+    // Verifica se já existem fixas ou parceladas no ciclo alvo
     const { start: nextStart, end: nextEnd } = this.getCycleBounds(targetYear, targetMonth, user.cycleStartDay);
     const existing = await this.prisma.transaction.count({
-      where: { userId, date: { gte: nextStart, lte: nextEnd }, type: 'DESPESA' },
+      where: {
+        userId, type: 'DESPESA',
+        date: { gte: nextStart, lte: nextEnd },
+        OR: [{ expenseType: 'FIXO' }, { isInstallment: true }],
+      },
     });
     if (existing > 0) {
       return { alreadyGenerated: true, nextMonth: targetMonth, nextYear: targetYear };
