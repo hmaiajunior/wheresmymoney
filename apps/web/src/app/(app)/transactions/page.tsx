@@ -64,25 +64,42 @@ export default function TransactionsPage() {
     queryFn: () => api.get('/payment-methods').then((r) => r.data),
   });
 
-  const queryParams = new URLSearchParams();
-  if (filters.type) queryParams.set('type', filters.type);
-  if (filters.expenseType) queryParams.set('expenseType', filters.expenseType);
-  if (filters.categoryId) queryParams.set('categoryId', filters.categoryId);
-  if (filters.paymentMethodId) queryParams.set('paymentMethodId', filters.paymentMethodId);
-  if (filters.search) queryParams.set('search', filters.search);
-
-  // Converte mês/ano em from/to
+  // Params base (sem categoryId/paymentMethodId) para filter-options
+  const baseParams = new URLSearchParams();
+  if (filters.type) baseParams.set('type', filters.type);
+  if (filters.expenseType) baseParams.set('expenseType', filters.expenseType);
+  if (filters.search) baseParams.set('search', filters.search);
   if (filters.month && filters.year) {
-    const y = filters.year;
-    const m = filters.month;
-    queryParams.set('from', `${y}-${m}-01`);
-    const lastDay = new Date(Number(y), Number(m), 0).getDate();
-    queryParams.set('to', `${y}-${m}-${lastDay}`);
+    baseParams.set('from', `${filters.year}-${filters.month}-01`);
+    const lastDay = new Date(Number(filters.year), Number(filters.month), 0).getDate();
+    baseParams.set('to', `${filters.year}-${filters.month}-${lastDay}`);
   } else if (filters.year) {
-    queryParams.set('from', `${filters.year}-01-01`);
-    queryParams.set('to', `${filters.year}-12-31`);
+    baseParams.set('from', `${filters.year}-01-01`);
+    baseParams.set('to', `${filters.year}-12-31`);
   }
 
+  const hasContextFilters = !!(filters.type || filters.expenseType || filters.month || filters.search);
+
+  const { data: filterOptions } = useQuery<{ categories: Category[]; paymentMethods: PaymentMethod[] }>({
+    queryKey: ['filter-options', filters.type, filters.expenseType, filters.month, filters.year, filters.search],
+    queryFn: () => api.get(`/transactions/filter-options?${baseParams}`).then((r) => r.data),
+    enabled: hasContextFilters,
+  });
+
+  const availableCategories = hasContextFilters ? (filterOptions?.categories ?? []) : (categories ?? []);
+  const availablePaymentMethods = hasContextFilters ? (filterOptions?.paymentMethods ?? []) : (paymentMethods ?? []);
+
+  // Limpa seleção se o item não está mais disponível
+  if (filters.categoryId && availableCategories.length > 0 && !availableCategories.find((c) => c.id === filters.categoryId)) {
+    setFilters((f) => ({ ...f, categoryId: '', page: 1 }));
+  }
+  if (filters.paymentMethodId && availablePaymentMethods.length > 0 && !availablePaymentMethods.find((p) => p.id === filters.paymentMethodId)) {
+    setFilters((f) => ({ ...f, paymentMethodId: '', page: 1 }));
+  }
+
+  const queryParams = new URLSearchParams(baseParams);
+  if (filters.categoryId) queryParams.set('categoryId', filters.categoryId);
+  if (filters.paymentMethodId) queryParams.set('paymentMethodId', filters.paymentMethodId);
   queryParams.set('page', String(filters.page));
   queryParams.set('limit', '50');
 
@@ -169,7 +186,7 @@ export default function TransactionsPage() {
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 flex-1 min-w-36"
           >
             <option value="">Todas as categorias</option>
-            {categories?.map((c) => (
+            {availableCategories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
@@ -179,7 +196,7 @@ export default function TransactionsPage() {
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 flex-1 min-w-36"
           >
             <option value="">Todas as formas de pagamento</option>
-            {paymentMethods?.map((p) => (
+            {availablePaymentMethods.map((p) => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>

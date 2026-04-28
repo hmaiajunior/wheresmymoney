@@ -18,6 +18,11 @@ export class TransactionsController {
     });
   }
 
+  @Get('filter-options')
+  filterOptions(@Request() req: { user: { id: string } }, @Query() query: TransactionFiltersDto) {
+    return this.transactionsService.findFilterOptions(req.user.id, query);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: { user: { id: string } }) {
     return this.transactionsService.findOne(id, req.user.id);

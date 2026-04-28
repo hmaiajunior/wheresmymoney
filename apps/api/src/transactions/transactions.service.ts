@@ -103,4 +103,39 @@ export class TransactionsService {
     await this.findOne(id, userId);
     return this.prisma.transaction.delete({ where: { id } });
   }
+
+  async findFilterOptions(userId: string, filters: Omit<TransactionFiltersDto, 'categoryId' | 'paymentMethodId' | 'page' | 'limit'>) {
+    const { type, expenseType, from, to, search } = filters;
+
+    const where: Prisma.TransactionWhereInput = { userId };
+    if (type) where.type = type;
+    if (expenseType) where.expenseType = expenseType;
+    if (from || to) {
+      where.date = {};
+      if (from) where.date.gte = new Date(from);
+      if (to) where.date.lte = new Date(to);
+    }
+    if (search) where.description = { contains: search, mode: 'insensitive' };
+
+    const transactions = await this.prisma.transaction.findMany({
+      where,
+      select: {
+        category: { select: { id: true, name: true, color: true } },
+        paymentMethod: { select: { id: true, name: true } },
+      },
+    });
+
+    const categoriesMap = new Map<string, { id: string; name: string; color?: string | null }>();
+    const paymentMethodsMap = new Map<string, { id: string; name: string }>();
+
+    for (const t of transactions) {
+      if (t.category) categoriesMap.set(t.category.id, t.category);
+      if (t.paymentMethod) paymentMethodsMap.set(t.paymentMethod.id, t.paymentMethod);
+    }
+
+    return {
+      categories: [...categoriesMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      paymentMethods: [...paymentMethodsMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  }
 }
