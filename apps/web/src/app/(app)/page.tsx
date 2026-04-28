@@ -36,6 +36,10 @@ export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(0);
   const [cycleMsg, setCycleMsg] = useState('');
+  const [showCyclePicker, setShowCyclePicker] = useState(false);
+  const nextMonthDefault = currentMonth === 12 ? 1 : currentMonth + 1;
+  const nextYearDefault = currentMonth === 12 ? currentYear + 1 : currentYear;
+  const [cycleTarget, setCycleTarget] = useState({ month: nextMonthDefault, year: nextYearDefault });
   const queryClient = useQueryClient();
 
   const { data: summaries, isLoading } = useQuery<MonthlySummary[]>({
@@ -44,8 +48,12 @@ export default function DashboardPage() {
   });
 
   const cycleMutation = useMutation({
-    mutationFn: () => api.post('/summary/generate-next-cycle').then((r) => r.data),
+    mutationFn: () => api.post('/summary/generate-next-cycle', {
+      targetMonth: cycleTarget.month,
+      targetYear: cycleTarget.year,
+    }).then((r) => r.data),
     onSuccess: (result) => {
+      setShowCyclePicker(false);
       if (result.alreadyGenerated) {
         setCycleMsg(`⚠️ Ciclo de ${getMonthName(result.nextMonth)} ${result.nextYear} já foi gerado.`);
       } else {
@@ -82,15 +90,47 @@ export default function DashboardPage() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {cycleMsg && <span className="text-xs text-slate-600">{cycleMsg}</span>}
-          <button
-            onClick={() => cycleMutation.mutate()}
-            disabled={cycleMutation.isPending}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            {cycleMutation.isPending ? 'Gerando...' : '🔄 Gerar próximo ciclo'}
-          </button>
+
+          {showCyclePicker ? (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <span className="text-xs text-blue-700 font-medium">Gerar ciclo de:</span>
+              <select
+                value={cycleTarget.month}
+                onChange={(e) => setCycleTarget((c) => ({ ...c, month: Number(e.target.value) }))}
+                className="border border-blue-300 rounded px-2 py-1 text-xs focus:outline-none"
+              >
+                {MONTHS.filter((m) => m.value !== 0).map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              <select
+                value={cycleTarget.year}
+                onChange={(e) => setCycleTarget((c) => ({ ...c, year: Number(e.target.value) }))}
+                className="border border-blue-300 rounded px-2 py-1 text-xs focus:outline-none"
+              >
+                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+              <span className="text-xs text-slate-400">(base: {getMonthName(cycleTarget.month === 1 ? 12 : cycleTarget.month - 1)})</span>
+              <button
+                onClick={() => cycleMutation.mutate()}
+                disabled={cycleMutation.isPending}
+                className="bg-blue-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {cycleMutation.isPending ? 'Gerando...' : 'Confirmar'}
+              </button>
+              <button onClick={() => setShowCyclePicker(false)} className="text-xs text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowCyclePicker(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              🔄 Gerar próximo ciclo
+            </button>
+          )}
+
           <Link
             href="/transactions/new"
             className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"

@@ -103,31 +103,31 @@ export class SummaryService {
     return Promise.all(months.map((m) => this.getSummary(userId, year, m)));
   }
 
-  async generateNextCycle(userId: string) {
+  async generateNextCycle(userId: string, targetMonth: number, targetYear: number) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
 
-    const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1;
-    const nextYear = currentMonth === 12 ? currentYear + 1 : currentYear;
+    // Mês base = mês anterior ao alvo
+    const baseMonth = targetMonth === 1 ? 12 : targetMonth - 1;
+    const baseYear = targetMonth === 1 ? targetYear - 1 : targetYear;
 
-    // Verifica se já existe algum lançamento de despesa no próximo ciclo
-    const { start: nextStart, end: nextEnd } = this.getCycleBounds(nextYear, nextMonth, user.cycleStartDay);
+    // Verifica se já existe algum lançamento de despesa no ciclo alvo
+    const { start: nextStart, end: nextEnd } = this.getCycleBounds(targetYear, targetMonth, user.cycleStartDay);
     const existing = await this.prisma.transaction.count({
       where: { userId, date: { gte: nextStart, lte: nextEnd }, type: 'DESPESA' },
     });
     if (existing > 0) {
-      return { alreadyGenerated: true, nextMonth, nextYear };
+      return { alreadyGenerated: true, nextMonth: targetMonth, nextYear: targetYear };
     }
 
-    // Busca fixas e parceladas do ciclo atual
-    const { start, end } = this.getCycleBounds(currentYear, currentMonth, user.cycleStartDay);
+    // Busca fixas e parceladas do ciclo base (mês anterior ao alvo)
+    const baseWhere = this.buildPeriodWhere(userId, baseYear, baseMonth, user.cycleStartDay);
     const transactions = await this.prisma.transaction.findMany({
       where: {
-        userId, type: 'DESPESA',
-        date: { gte: start, lte: end },
-        OR: [{ expenseType: 'FIXO' }, { isInstallment: true }],
+        AND: [
+          baseWhere,
+          { type: 'DESPESA' },
+          { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
+        ],
       },
     });
 
@@ -168,7 +168,7 @@ export class SummaryService {
       await this.prisma.transaction.createMany({ data });
     }
 
-    return { alreadyGenerated: false, created: data.length, nextMonth, nextYear };
+    return { alreadyGenerated: false, created: data.length, nextMonth: targetMonth, nextYear: targetYear };
   }
 
   async getCategorySummary(userId: string, year: number, month: number) {
