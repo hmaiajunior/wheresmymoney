@@ -21,6 +21,7 @@ export interface TransactionFiltersDto {
   categoryIds?: string | string[];
   expenseType?: ExpenseType;
   paymentMethodId?: string;
+  isInstallment?: string; // 'true' | 'false' (query param é string)
   from?: string;
   to?: string;
   search?: string;
@@ -33,7 +34,7 @@ export class TransactionsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(userId: string, filters: TransactionFiltersDto = {}) {
-    const { type, categoryId, categoryIds, expenseType, paymentMethodId, from, to, search, page = 1, limit = 50 } = filters;
+    const { type, categoryId, categoryIds, expenseType, paymentMethodId, isInstallment, from, to, search, page = 1, limit = 50 } = filters;
 
     const where: Prisma.TransactionWhereInput = { userId };
     if (type) where.type = type;
@@ -45,6 +46,7 @@ export class TransactionsService {
     }
     if (expenseType) where.expenseType = expenseType;
     if (paymentMethodId) where.paymentMethodId = paymentMethodId;
+    if (isInstallment !== undefined && isInstallment !== '') where.isInstallment = isInstallment === 'true';
     if (from || to) {
       where.date = {};
       if (from) where.date.gte = new Date(from);
@@ -84,9 +86,13 @@ export class TransactionsService {
   }
 
   async create(userId: string, dto: CreateTransactionDto) {
+    const { ...data } = dto as CreateTransactionDto & { installmentCurrent?: unknown; installmentTotal?: unknown };
+    delete (data as Record<string, unknown>).installmentCurrent;
+    delete (data as Record<string, unknown>).installmentTotal;
+
     const origin = await this.prisma.transaction.create({
       data: {
-        ...dto,
+        ...data,
         date: new Date(dto.date),
         amount: new Prisma.Decimal(dto.amount),
         userId,

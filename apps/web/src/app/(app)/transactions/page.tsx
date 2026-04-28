@@ -49,6 +49,7 @@ export default function TransactionsPage() {
     expenseType: '',
     categoryIds: [] as string[],
     paymentMethodId: '',
+    isInstallment: '',
     month: '',
     year: String(currentYear),
     search: '',
@@ -99,6 +100,7 @@ export default function TransactionsPage() {
   const queryParams = new URLSearchParams(baseParams);
   filters.categoryIds.forEach((id) => queryParams.append('categoryIds', id));
   if (filters.paymentMethodId) queryParams.set('paymentMethodId', filters.paymentMethodId);
+  if (filters.isInstallment) queryParams.set('isInstallment', filters.isInstallment);
   queryParams.set('page', String(filters.page));
   queryParams.set('limit', '50');
 
@@ -121,7 +123,7 @@ export default function TransactionsPage() {
 
   const hasActiveFilters =
     filters.type || filters.expenseType || filters.categoryIds.length > 0 ||
-    filters.paymentMethodId || filters.month || filters.search;
+    filters.paymentMethodId || filters.isInstallment || filters.month || filters.search;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -198,6 +200,16 @@ export default function TransactionsPage() {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+          <button
+            onClick={() => set('isInstallment', filters.isInstallment === 'true' ? '' : 'true')}
+            className={`px-3 py-1.5 rounded-lg text-sm border transition-colors whitespace-nowrap ${
+              filters.isInstallment === 'true'
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'border-slate-300 text-slate-600 hover:border-slate-400'
+            }`}
+          >
+            🔁 Parceladas
+          </button>
         </div>
 
         {/* Linha 3: tags de categoria */}
@@ -226,7 +238,7 @@ export default function TransactionsPage() {
         {/* Limpar filtros */}
         {hasActiveFilters && (
           <button
-            onClick={() => setFilters({ type: '', expenseType: '', categoryIds: [], paymentMethodId: '', month: '', year: String(currentYear), search: '', page: 1 })}
+            onClick={() => setFilters({ type: '', expenseType: '', categoryIds: [], paymentMethodId: '', isInstallment: '', month: '', year: String(currentYear), search: '', page: 1 })}
             className="text-xs text-slate-500 hover:text-red-600 underline"
           >
             Limpar filtros
