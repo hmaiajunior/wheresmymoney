@@ -27,7 +27,7 @@ interface TransactionsResponse {
   pages: number;
 }
 
-interface Category { id: string; name: string }
+interface Category { id: string; name: string; color?: string | null }
 interface PaymentMethod { id: string; name: string }
 
 const MONTHS = [
@@ -46,7 +46,7 @@ export default function TransactionsPage() {
   const [filters, setFilters] = useState({
     type: '',
     expenseType: '',
-    categoryId: '',
+    categoryIds: [] as string[],
     paymentMethodId: '',
     month: '',
     year: String(currentYear),
@@ -54,17 +54,17 @@ export default function TransactionsPage() {
     page: 1,
   });
 
-  const { data: categories } = useQuery<Category[]>({
+  const { data: allCategories } = useQuery<Category[]>({
     queryKey: ['categories'],
     queryFn: () => api.get('/categories').then((r) => r.data),
   });
 
-  const { data: paymentMethods } = useQuery<PaymentMethod[]>({
+  const { data: allPaymentMethods } = useQuery<PaymentMethod[]>({
     queryKey: ['payment-methods'],
     queryFn: () => api.get('/payment-methods').then((r) => r.data),
   });
 
-  // Params base (sem categoryId/paymentMethodId) para filter-options
+  // Params base (sem categoryIds/paymentMethodId) para filter-options
   const baseParams = new URLSearchParams();
   if (filters.type) baseParams.set('type', filters.type);
   if (filters.expenseType) baseParams.set('expenseType', filters.expenseType);
@@ -86,19 +86,17 @@ export default function TransactionsPage() {
     enabled: hasContextFilters,
   });
 
-  const availableCategories = hasContextFilters ? (filterOptions?.categories ?? []) : (categories ?? []);
-  const availablePaymentMethods = hasContextFilters ? (filterOptions?.paymentMethods ?? []) : (paymentMethods ?? []);
+  const availableCategories = hasContextFilters ? (filterOptions?.categories ?? []) : (allCategories ?? []);
+  const availablePaymentMethods = hasContextFilters ? (filterOptions?.paymentMethods ?? []) : (allPaymentMethods ?? []);
 
-  // Limpa seleção se o item não está mais disponível
-  if (filters.categoryId && availableCategories.length > 0 && !availableCategories.find((c) => c.id === filters.categoryId)) {
-    setFilters((f) => ({ ...f, categoryId: '', page: 1 }));
-  }
+  // Limpa paymentMethodId se não está mais disponível
   if (filters.paymentMethodId && availablePaymentMethods.length > 0 && !availablePaymentMethods.find((p) => p.id === filters.paymentMethodId)) {
     setFilters((f) => ({ ...f, paymentMethodId: '', page: 1 }));
   }
 
+  // Monta queryParams para a listagem
   const queryParams = new URLSearchParams(baseParams);
-  if (filters.categoryId) queryParams.set('categoryId', filters.categoryId);
+  filters.categoryIds.forEach((id) => queryParams.append('categoryIds', id));
   if (filters.paymentMethodId) queryParams.set('paymentMethodId', filters.paymentMethodId);
   queryParams.set('page', String(filters.page));
   queryParams.set('limit', '50');
@@ -111,8 +109,17 @@ export default function TransactionsPage() {
   const set = (key: string, value: string) =>
     setFilters((f) => ({ ...f, [key]: value, page: 1 }));
 
+  const toggleCategory = (id: string) =>
+    setFilters((f) => ({
+      ...f,
+      page: 1,
+      categoryIds: f.categoryIds.includes(id)
+        ? f.categoryIds.filter((c) => c !== id)
+        : [...f.categoryIds, id],
+    }));
+
   const hasActiveFilters =
-    filters.type || filters.expenseType || filters.categoryId ||
+    filters.type || filters.expenseType || filters.categoryIds.length > 0 ||
     filters.paymentMethodId || filters.month || filters.search;
 
   return (
@@ -159,7 +166,7 @@ export default function TransactionsPage() {
           </select>
         </div>
 
-        {/* Linha 2: mês + ano + categoria + pagamento */}
+        {/* Linha 2: mês + ano + pagamento */}
         <div className="flex gap-3 flex-wrap">
           <select
             value={filters.month}
@@ -181,16 +188,6 @@ export default function TransactionsPage() {
             ))}
           </select>
           <select
-            value={filters.categoryId}
-            onChange={(e) => set('categoryId', e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 flex-1 min-w-36"
-          >
-            <option value="">Todas as categorias</option>
-            {availableCategories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select
             value={filters.paymentMethodId}
             onChange={(e) => set('paymentMethodId', e.target.value)}
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 flex-1 min-w-36"
@@ -202,10 +199,33 @@ export default function TransactionsPage() {
           </select>
         </div>
 
+        {/* Linha 3: tags de categoria */}
+        {availableCategories.length > 0 && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            {availableCategories.map((c) => {
+              const selected = filters.categoryIds.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => toggleCategory(c.id)}
+                  className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-all border"
+                  style={
+                    selected
+                      ? { backgroundColor: c.color ?? '#6b7280', color: '#fff', borderColor: c.color ?? '#6b7280' }
+                      : { backgroundColor: 'transparent', color: c.color ?? '#6b7280', borderColor: c.color ?? '#6b7280' }
+                  }
+                >
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Limpar filtros */}
         {hasActiveFilters && (
           <button
-            onClick={() => setFilters({ type: '', expenseType: '', categoryId: '', paymentMethodId: '', month: '', year: String(currentYear), search: '', page: 1 })}
+            onClick={() => setFilters({ type: '', expenseType: '', categoryIds: [], paymentMethodId: '', month: '', year: String(currentYear), search: '', page: 1 })}
             className="text-xs text-slate-500 hover:text-red-600 underline"
           >
             Limpar filtros

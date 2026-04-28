@@ -18,6 +18,7 @@ export interface CreateTransactionDto {
 export interface TransactionFiltersDto {
   type?: TransactionType;
   categoryId?: string;
+  categoryIds?: string | string[];
   expenseType?: ExpenseType;
   paymentMethodId?: string;
   from?: string;
@@ -32,11 +33,16 @@ export class TransactionsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(userId: string, filters: TransactionFiltersDto = {}) {
-    const { type, categoryId, expenseType, paymentMethodId, from, to, search, page = 1, limit = 50 } = filters;
+    const { type, categoryId, categoryIds, expenseType, paymentMethodId, from, to, search, page = 1, limit = 50 } = filters;
 
     const where: Prisma.TransactionWhereInput = { userId };
     if (type) where.type = type;
-    if (categoryId) where.categoryId = categoryId;
+    if (categoryIds) {
+      const ids = Array.isArray(categoryIds) ? categoryIds : [categoryIds];
+      if (ids.length > 0) where.categoryId = { in: ids };
+    } else if (categoryId) {
+      where.categoryId = categoryId;
+    }
     if (expenseType) where.expenseType = expenseType;
     if (paymentMethodId) where.paymentMethodId = paymentMethodId;
     if (from || to) {
