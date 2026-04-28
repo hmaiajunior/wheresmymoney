@@ -28,6 +28,8 @@ export default function NewTransactionPage() {
     installmentTotal: '',
   });
   const [error, setError] = useState('');
+  const [saveAndNew, setSaveAndNew] = useState(false);
+  const [successMsg, setSuccessMsg] = useState('');
 
   const { data: categories } = useQuery<Category[]>({
     queryKey: ['categories'],
@@ -56,7 +58,24 @@ export default function NewTransactionPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
-      router.push('/transactions');
+      if (saveAndNew) {
+        // Mantém tipo, expenseType e paymentMethod; limpa campos únicos
+        setForm((f) => ({
+          ...f,
+          date: today,
+          description: '',
+          amount: '',
+          categoryId: '',
+          source: '',
+          isInstallment: false,
+          installmentCurrent: '1',
+          installmentTotal: '',
+        }));
+        setSuccessMsg('✅ Lançamento salvo!');
+        setTimeout(() => setSuccessMsg(''), 3000);
+      } else {
+        router.push('/transactions');
+      }
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -64,9 +83,10 @@ export default function NewTransactionPage() {
     },
   });
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent, andNew = false) {
     e.preventDefault();
     setError('');
+    setSaveAndNew(andNew);
     if (!form.amount || isNaN(parseFloat(form.amount.replace(',', '.')))) {
       setError('Valor inválido.');
       return;
@@ -232,6 +252,12 @@ export default function NewTransactionPage() {
           </Field>
         )}
 
+        {successMsg && (
+          <p className="text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+            {successMsg}
+          </p>
+        )}
+
         {error && (
           <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {error}
@@ -242,16 +268,24 @@ export default function NewTransactionPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="flex-1 py-2.5 rounded-lg text-sm font-medium border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
+            className="py-2.5 px-4 rounded-lg text-sm font-medium border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
           >
             Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={mutation.isPending}
+            onClick={(e) => handleSubmit(e as unknown as React.FormEvent, true)}
+            className="flex-1 py-2.5 rounded-lg text-sm font-medium border border-green-600 text-green-700 hover:bg-green-50 disabled:opacity-50 transition-colors"
+          >
+            {mutation.isPending && saveAndNew ? 'Salvando...' : '+ Salvar e novo'}
           </button>
           <button
             type="submit"
             disabled={mutation.isPending}
             className="flex-1 py-2.5 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition-colors"
           >
-            {mutation.isPending ? 'Salvando...' : 'Salvar Lançamento'}
+            {mutation.isPending && !saveAndNew ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
       </form>
