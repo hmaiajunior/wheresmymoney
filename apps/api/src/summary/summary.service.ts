@@ -103,6 +103,74 @@ export class SummaryService {
     return Promise.all(months.map((m) => this.getSummary(userId, year, m)));
   }
 
+  async generateNextCycle(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+
+    const nextMonth = currentMonth === 12 ? 1 : currentMonth + 1;
+    const nextYear = currentMonth === 12 ? currentYear + 1 : currentYear;
+
+    // Verifica se já existe algum lançamento de despesa no próximo ciclo
+    const { start: nextStart, end: nextEnd } = this.getCycleBounds(nextYear, nextMonth, user.cycleStartDay);
+    const existing = await this.prisma.transaction.count({
+      where: { userId, date: { gte: nextStart, lte: nextEnd }, type: 'DESPESA' },
+    });
+    if (existing > 0) {
+      return { alreadyGenerated: true, nextMonth, nextYear };
+    }
+
+    // Busca fixas e parceladas do ciclo atual
+    const { start, end } = this.getCycleBounds(currentYear, currentMonth, user.cycleStartDay);
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        userId, type: 'DESPESA',
+        date: { gte: start, lte: end },
+        OR: [{ expenseType: 'FIXO' }, { isInstallment: true }],
+      },
+    });
+
+    const data = transactions
+      .filter((t) => {
+        if (t.expenseType === 'FIXO') return true;
+        if (t.isInstallment && t.installmentInfo) {
+          const match = t.installmentInfo.match(/^(\d+)\/(\d+)$/);
+          return match && parseInt(match[1]) < parseInt(match[2]);
+        }
+        return false;
+      })
+      .map((t) => {
+        const replicaDate = new Date(t.date);
+        replicaDate.setMonth(replicaDate.getMonth() + 1);
+
+        if (t.expenseType === 'FIXO') {
+          return {
+            date: replicaDate, type: 'DESPESA' as const, description: t.description,
+            amount: new Prisma.Decimal(0), categoryId: t.categoryId,
+            paymentMethodId: t.paymentMethodId, expenseType: 'FIXO' as const,
+            isInstallment: false, userId,
+          };
+        }
+
+        const match = t.installmentInfo!.match(/^(\d+)\/(\d+)$/)!;
+        const current = parseInt(match[1], 10);
+        const total = parseInt(match[2], 10);
+        return {
+          date: replicaDate, type: 'DESPESA' as const, description: t.description,
+          amount: new Prisma.Decimal(t.amount.toString()), categoryId: t.categoryId,
+          paymentMethodId: t.paymentMethodId, expenseType: t.expenseType,
+          isInstallment: true, installmentInfo: `${current + 1}/${total}`, userId,
+        };
+      });
+
+    if (data.length > 0) {
+      await this.prisma.transaction.createMany({ data });
+    }
+
+    return { alreadyGenerated: false, created: data.length, nextMonth, nextYear };
+  }
+
   async getCategorySummary(userId: string, year: number, month: number) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const where = this.buildPeriodWhere(userId, year, month, user.cycleStartDay, {

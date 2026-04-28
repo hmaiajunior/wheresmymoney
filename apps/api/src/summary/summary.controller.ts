@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Query, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { SummaryService } from './summary.service';
 
@@ -6,6 +6,11 @@ import { SummaryService } from './summary.service';
 @Controller('summary')
 export class SummaryController {
   constructor(private summaryService: SummaryService) {}
+
+  @Post('generate-next-cycle')
+  generateNextCycle(@Request() req: { user: { id: string } }) {
+    return this.summaryService.generateNextCycle(req.user.id);
+  }
 
   @Get(':year/:month')
   getSummary(

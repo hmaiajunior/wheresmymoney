@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { formatCurrency, getMonthName } from '@/lib/format';
 import Link from 'next/link';
@@ -34,11 +34,27 @@ const MONTHS = [
 
 export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(0); // 0 = ano inteiro
+  const [selectedMonth, setSelectedMonth] = useState(0);
+  const [cycleMsg, setCycleMsg] = useState('');
+  const queryClient = useQueryClient();
 
   const { data: summaries, isLoading } = useQuery<MonthlySummary[]>({
     queryKey: ['summary', selectedYear],
     queryFn: () => api.get(`/summary/${selectedYear}`).then((r) => r.data),
+  });
+
+  const cycleMutation = useMutation({
+    mutationFn: () => api.post('/summary/generate-next-cycle').then((r) => r.data),
+    onSuccess: (result) => {
+      if (result.alreadyGenerated) {
+        setCycleMsg(`⚠️ Ciclo de ${getMonthName(result.nextMonth)} ${result.nextYear} já foi gerado.`);
+      } else {
+        setCycleMsg(`✅ ${result.created} lançamentos criados para ${getMonthName(result.nextMonth)} ${result.nextYear}.`);
+        queryClient.invalidateQueries({ queryKey: ['summary'] });
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      }
+      setTimeout(() => setCycleMsg(''), 5000);
+    },
   });
 
   const activeSummaries = (summaries ?? []).filter((s) => s.receitas > 0 || s.totalDespesas > 0);
@@ -66,12 +82,22 @@ export default function DashboardPage() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
-        <Link
-          href="/transactions/new"
-          className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
-        >
-          + Novo Lançamento
-        </Link>
+        <div className="flex items-center gap-3">
+          {cycleMsg && <span className="text-xs text-slate-600">{cycleMsg}</span>}
+          <button
+            onClick={() => cycleMutation.mutate()}
+            disabled={cycleMutation.isPending}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            {cycleMutation.isPending ? 'Gerando...' : '🔄 Gerar próximo ciclo'}
+          </button>
+          <Link
+            href="/transactions/new"
+            className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
+          >
+            + Novo Lançamento
+          </Link>
+        </div>
       </div>
 
       {/* Filtros */}
