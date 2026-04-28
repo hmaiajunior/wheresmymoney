@@ -135,12 +135,24 @@ export class SummaryService {
       },
     });
 
+    const skipped: { description: string; reason: string }[] = [];
+
     const data = transactions
       .filter((t) => {
         if (t.expenseType === 'FIXO') return true;
         if (t.isInstallment && t.installmentInfo) {
           const match = t.installmentInfo.match(/^(\d+)\/(\d+)$/);
-          return match && parseInt(match[1]) < parseInt(match[2]);
+          if (!match) {
+            skipped.push({ description: t.description, reason: `formato de parcela inválido: "${t.installmentInfo}"` });
+            return false;
+          }
+          const current = parseInt(match[1], 10);
+          const total = parseInt(match[2], 10);
+          if (current >= total) {
+            skipped.push({ description: t.description, reason: `última parcela (${t.installmentInfo})` });
+            return false;
+          }
+          return true;
         }
         return false;
       })
@@ -187,6 +199,7 @@ export class SummaryService {
       alreadyGenerated: false,
       created: data.length,
       baseCount,
+      skipped,
       nextMonth: targetMonth,
       nextYear: targetYear,
     };

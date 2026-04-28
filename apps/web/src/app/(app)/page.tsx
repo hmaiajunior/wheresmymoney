@@ -58,10 +58,13 @@ export default function DashboardPage() {
         setCycleMsg(`⚠️ Ciclo de ${getMonthName(result.nextMonth)} ${result.nextYear} já foi gerado.`);
       } else {
         const ok = result.created === result.baseCount;
+        const skippedInfo = result.skipped?.length
+          ? ` Ignorados: ${result.skipped.map((s: { description: string; reason: string }) => `"${s.description}" (${s.reason})`).join(', ')}.`
+          : '';
         setCycleMsg(
           ok
             ? `✅ ${result.created} lançamentos criados para ${getMonthName(result.nextMonth)} ${result.nextYear}.`
-            : `⚠️ ${result.created} de ${result.baseCount} lançamentos criados para ${getMonthName(result.nextMonth)} ${result.nextYear}. Verifique os itens faltantes.`,
+            : `⚠️ ${result.created} de ${result.baseCount} criados para ${getMonthName(result.nextMonth)} ${result.nextYear}.${skippedInfo}`,
         );
         queryClient.invalidateQueries({ queryKey: ['summary'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
