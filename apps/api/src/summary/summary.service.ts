@@ -172,7 +172,24 @@ export class SummaryService {
       await this.prisma.transaction.createMany({ data });
     }
 
-    return { alreadyGenerated: false, created: data.length, nextMonth: targetMonth, nextYear: targetYear };
+    // Conta fixas+parceladas do ciclo base para validação
+    const baseCount = await this.prisma.transaction.count({
+      where: {
+        AND: [
+          baseWhere,
+          { type: 'DESPESA' },
+          { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
+        ],
+      },
+    });
+
+    return {
+      alreadyGenerated: false,
+      created: data.length,
+      baseCount,
+      nextMonth: targetMonth,
+      nextYear: targetYear,
+    };
   }
 
   async getCategorySummary(userId: string, year: number, month: number) {

@@ -57,7 +57,12 @@ export default function DashboardPage() {
       if (result.alreadyGenerated) {
         setCycleMsg(`⚠️ Ciclo de ${getMonthName(result.nextMonth)} ${result.nextYear} já foi gerado.`);
       } else {
-        setCycleMsg(`✅ ${result.created} lançamentos criados para ${getMonthName(result.nextMonth)} ${result.nextYear}.`);
+        const ok = result.created === result.baseCount;
+        setCycleMsg(
+          ok
+            ? `✅ ${result.created} lançamentos criados para ${getMonthName(result.nextMonth)} ${result.nextYear}.`
+            : `⚠️ ${result.created} de ${result.baseCount} lançamentos criados para ${getMonthName(result.nextMonth)} ${result.nextYear}. Verifique os itens faltantes.`,
+        );
         queryClient.invalidateQueries({ queryKey: ['summary'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
       }
