@@ -48,9 +48,25 @@ export class TransactionsService {
     if (paymentMethodId) where.paymentMethodId = paymentMethodId;
     if (isInstallment !== undefined && isInstallment !== '') where.isInstallment = isInstallment === 'true';
     if (from || to) {
-      where.date = {};
-      if (from) where.date.gte = new Date(from);
-      if (to) where.date.lte = new Date(to);
+      const fromDate = from ? new Date(from) : undefined;
+      const toDate = to ? new Date(to) : undefined;
+      const dateRange: Prisma.DateTimeFilter = {};
+      if (fromDate) dateRange.gte = fromDate;
+      if (toDate) dateRange.lte = toDate;
+
+      // Considera tanto cycleDate (importados) quanto date (manuais sem cycleDate)
+      const existingConditions = where.AND
+        ? (Array.isArray(where.AND) ? where.AND : [where.AND])
+        : [];
+      where.AND = [
+        ...existingConditions,
+        {
+          OR: [
+            { cycleDate: dateRange },
+            { cycleDate: null, date: dateRange },
+          ],
+        },
+      ];
     }
     if (search) {
       where.description = { contains: search, mode: 'insensitive' };
