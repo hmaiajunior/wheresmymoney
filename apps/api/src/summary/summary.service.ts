@@ -56,7 +56,7 @@ export class SummaryService {
     const where = (extra: Prisma.TransactionWhereInput) =>
       this.buildPeriodWhere(userId, year, month, user.cycleStartDay, extra);
 
-    const [receitasResult, despesasFixasResult, despesasEsporadicasResult, despesasTerceirosResult] =
+    const [receitasResult, despesasFixasResult, despesasEsporadicasResult, despesasTerceirosResult, transactionCount] =
       await Promise.all([
         this.prisma.transaction.aggregate({
           where: where({ type: 'RECEITA' }),
@@ -74,6 +74,7 @@ export class SummaryService {
           where: where({ type: 'DESPESA', expenseType: 'TERCEIROS' }),
           _sum: { amount: true },
         }),
+        this.prisma.transaction.count({ where: where({}) }),
       ]);
 
     const receitas = Number(receitasResult._sum.amount ?? 0);
@@ -84,17 +85,10 @@ export class SummaryService {
     const saldo = receitas - totalDespesas;
 
     return {
-      year,
-      month,
-      cycleStartDay: user.cycleStartDay,
-      cycleStart: start.toISOString(),
-      cycleEnd: end.toISOString(),
-      receitas,
-      despesasFixas,
-      despesasEsporadicas,
-      despesasTerceiros,
-      totalDespesas,
-      saldo,
+      year, month, cycleStartDay: user.cycleStartDay,
+      cycleStart: start.toISOString(), cycleEnd: end.toISOString(),
+      receitas, despesasFixas, despesasEsporadicas, despesasTerceiros,
+      totalDespesas, saldo, transactionCount,
     };
   }
 

@@ -17,6 +17,7 @@ interface MonthlySummary {
   despesasTerceiros: number;
   totalDespesas: number;
   saldo: number;
+  transactionCount: number;
 }
 
 const currentYear = new Date().getFullYear();
@@ -73,7 +74,7 @@ export default function DashboardPage() {
     },
   });
 
-  const activeSummaries = (summaries ?? []).filter((s) => s.receitas > 0 || s.totalDespesas > 0);
+  const activeSummaries = (summaries ?? []).filter((s) => s.receitas > 0 || s.totalDespesas > 0 || s.transactionCount > 0);
 
   const visibleSummaries = selectedMonth === 0
     ? activeSummaries
