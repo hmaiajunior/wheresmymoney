@@ -1,0 +1,30 @@
+{
+  "name": "wmm",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "pnpm --filter api prisma migrate dev",
+    "db:seed": "pnpm --filter api prisma db seed",
+    "db:studio": "pnpm --filter api prisma studio"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@biomejs/biome",
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "argon2",
+      "prisma"
+    ]
+  },
+  "devDependencies": {
+    "turbo": "^2.5.3",
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.8.3"
+  }
+}

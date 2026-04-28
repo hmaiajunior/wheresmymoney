@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  password      String
+  name          String
+  cycleStartDay Int           @default(1)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  transactions  Transaction[]
+  categories    Category[]
+}
+
+model Category {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  color        String?
+  isSystem     Boolean       @default(false)
+  userId       String?
+  user         User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model PaymentMethod {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  type         String
+  transactions Transaction[]
+}
+
+model Transaction {
+  id              String          @id @default(cuid())
+  date            DateTime
+  type            TransactionType
+  categoryId      String?
+  category        Category?       @relation(fields: [categoryId], references: [id])
+  source          String?
+  description     String
+  amount          Decimal         @db.Decimal(10, 2)
+  paymentMethodId String?
+  paymentMethod   PaymentMethod?  @relation(fields: [paymentMethodId], references: [id])
+  expenseType     ExpenseType?
+  isInstallment   Boolean         @default(false)
+  installmentInfo String?
+  cycleDate       DateTime?       // período de referência (importado da coluna Ciclo da planilha)
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([userId, date])
+  @@index([userId, type])
+  @@index([userId, categoryId])
+}
+
+enum TransactionType {
+  RECEITA
+  DESPESA
+}
+
+enum ExpenseType {
+  FIXO
+  ESPORADICO
+  TERCEIROS
+}
