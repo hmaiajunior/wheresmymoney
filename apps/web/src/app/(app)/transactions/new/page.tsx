@@ -24,7 +24,8 @@ export default function NewTransactionPage() {
     paymentMethodId: '',
     expenseType: 'ESPORADICO',
     isInstallment: false,
-    installmentInfo: '',
+    installmentCurrent: '1',
+    installmentTotal: '',
   });
   const [error, setError] = useState('');
 
@@ -48,7 +49,9 @@ export default function NewTransactionPage() {
         paymentMethodId: data.paymentMethodId || undefined,
         source: data.source || undefined,
         expenseType: data.type === 'DESPESA' ? data.expenseType : undefined,
-        installmentInfo: data.isInstallment ? data.installmentInfo : undefined,
+        installmentInfo: data.isInstallment && data.installmentTotal
+          ? `${data.installmentCurrent}/${data.installmentTotal}`
+          : undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -193,15 +196,28 @@ export default function NewTransactionPage() {
             </div>
 
             {form.isInstallment && (
-              <Field label="Parcela (ex: 3/12)">
-                <input
-                  type="text"
-                  placeholder="ex: 3/12"
-                  value={form.installmentInfo}
-                  onChange={(e) => set('installmentInfo', e.target.value)}
-                  className={inputClass}
-                />
-              </Field>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Parcela atual">
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="ex: 1"
+                    value={form.installmentCurrent}
+                    onChange={(e) => set('installmentCurrent', e.target.value)}
+                    className={inputClass}
+                  />
+                </Field>
+                <Field label="Total de parcelas">
+                  <input
+                    type="number"
+                    min="2"
+                    placeholder="ex: 12"
+                    value={form.installmentTotal}
+                    onChange={(e) => set('installmentTotal', e.target.value)}
+                    className={inputClass}
+                  />
+                </Field>
+              </div>
             )}
           </>
         ) : (

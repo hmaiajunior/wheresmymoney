@@ -83,8 +83,8 @@ export class TransactionsService {
     return t;
   }
 
-  create(userId: string, dto: CreateTransactionDto) {
-    return this.prisma.transaction.create({
+  async create(userId: string, dto: CreateTransactionDto) {
+    const origin = await this.prisma.transaction.create({
       data: {
         ...dto,
         date: new Date(dto.date),
@@ -93,6 +93,58 @@ export class TransactionsService {
       },
       include: { category: true, paymentMethod: true },
     });
+
+    const replicas: Prisma.TransactionCreateManyInput[] = [];
+    const originDate = new Date(dto.date);
+
+    if (dto.type === 'DESPESA' && dto.expenseType === 'FIXO') {
+      // Replica até dezembro do mesmo ano com amount=0
+      const endMonth = 12;
+      for (let m = originDate.getMonth() + 2; m <= endMonth; m++) {
+        const replicaDate = new Date(originDate);
+        replicaDate.setMonth(m - 1);
+        replicas.push({
+          date: replicaDate,
+          type: dto.type,
+          description: dto.description,
+          amount: new Prisma.Decimal(0),
+          categoryId: dto.categoryId ?? null,
+          paymentMethodId: dto.paymentMethodId ?? null,
+          expenseType: dto.expenseType,
+          isInstallment: false,
+          userId,
+        });
+      }
+    } else if (dto.isInstallment && dto.installmentInfo) {
+      // Formato esperado: "1/12" — parcela atual / total
+      const match = dto.installmentInfo.match(/^(\d+)\/(\d+)$/);
+      if (match) {
+        const current = parseInt(match[1], 10);
+        const total = parseInt(match[2], 10);
+        for (let i = 1; i < total - current + 1; i++) {
+          const replicaDate = new Date(originDate);
+          replicaDate.setMonth(originDate.getMonth() + i);
+          replicas.push({
+            date: replicaDate,
+            type: dto.type,
+            description: dto.description,
+            amount: new Prisma.Decimal(dto.amount),
+            categoryId: dto.categoryId ?? null,
+            paymentMethodId: dto.paymentMethodId ?? null,
+            expenseType: dto.expenseType ?? null,
+            isInstallment: true,
+            installmentInfo: `${current + i}/${total}`,
+            userId,
+          });
+        }
+      }
+    }
+
+    if (replicas.length > 0) {
+      await this.prisma.transaction.createMany({ data: replicas });
+    }
+
+    return origin;
   }
 
   async update(id: string, userId: string, dto: Partial<CreateTransactionDto>) {
