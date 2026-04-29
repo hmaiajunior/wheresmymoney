@@ -111,9 +111,10 @@ export class TransactionsService {
   }
 
   async create(userId: string, dto: CreateTransactionDto) {
-    const { ...data } = dto as CreateTransactionDto & { installmentCurrent?: unknown; installmentTotal?: unknown };
+    const { ...data } = dto as CreateTransactionDto & { installmentCurrent?: unknown; installmentTotal?: unknown; cycleMonth?: unknown };
     delete (data as Record<string, unknown>).installmentCurrent;
     delete (data as Record<string, unknown>).installmentTotal;
+    delete (data as Record<string, unknown>).cycleMonth;
 
     const origin = await this.prisma.transaction.create({
       data: {
