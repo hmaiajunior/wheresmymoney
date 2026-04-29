@@ -157,9 +157,9 @@ export class SummaryService {
         if (t.expenseType === 'FIXO') {
           return {
             date: replicaDate, type: 'DESPESA' as const, description: t.description,
-            amount: new Prisma.Decimal(0), categoryId: t.categoryId,
+            amount: new Prisma.Decimal(t.amount.toString()), categoryId: t.categoryId,
             paymentMethodId: t.paymentMethodId, expenseType: 'FIXO' as const,
-            isInstallment: false, userId,
+            isInstallment: false, isConfirmed: false, userId,
           };
         }
 

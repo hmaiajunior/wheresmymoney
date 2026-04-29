@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { formatCurrency, formatDate, EXPENSE_TYPE_LABELS, TRANSACTION_TYPE_LABELS } from '@/lib/format';
@@ -15,6 +15,7 @@ interface Transaction {
   expenseType?: string;
   isInstallment: boolean;
   installmentInfo?: string;
+  isConfirmed: boolean;
   category?: { name: string; color?: string };
   paymentMethod?: { name: string };
 }
@@ -54,6 +55,13 @@ export default function TransactionsPage() {
     year: String(currentYear),
     search: '',
     page: 1,
+  });
+
+  const queryClient = useQueryClient();
+
+  const confirmMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/transactions/${id}/confirm`).then((r) => r.data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
   });
 
   const { data: allCategories } = useQuery<Category[]>({
@@ -291,7 +299,7 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.data.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={t.id} className={`transition-colors ${!t.isConfirmed ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50'}`}>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                         {formatDate(t.date)}
                       </td>
@@ -299,6 +307,9 @@ export default function TransactionsPage() {
                         <span className="block truncate">{t.description}</span>
                         {t.isInstallment && t.installmentInfo && (
                           <span className="text-xs text-slate-400">Parcela {t.installmentInfo}</span>
+                        )}
+                        {!t.isConfirmed && (
+                          <span className="text-xs text-amber-600 font-medium">⚠ valor pendente de validação</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -328,7 +339,17 @@ export default function TransactionsPage() {
                         {t.type === 'DESPESA' ? '−' : '+'}
                         {formatCurrency(Number(t.amount))}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 flex items-center gap-2 justify-end">
+                        {!t.isConfirmed && (
+                          <button
+                            onClick={() => confirmMutation.mutate(t.id)}
+                            disabled={confirmMutation.isPending}
+                            title="Confirmar valor"
+                            className="text-xs text-amber-600 hover:text-green-700 font-medium disabled:opacity-50"
+                          >
+                            ✓
+                          </button>
+                        )}
                         <Link href={`/transactions/${t.id}`} className="text-slate-400 hover:text-slate-700 text-xs">
                           ✏️
                         </Link>

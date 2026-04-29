@@ -33,6 +33,11 @@ export class TransactionsController {
     return this.transactionsService.create(req.user.id, dto);
   }
 
+  @Patch(':id/confirm')
+  confirm(@Param('id') id: string, @Request() req: { user: { id: string } }) {
+    return this.transactionsService.confirm(id, req.user.id);
+  }
+
   @Patch(':id')
   update(
     @Param('id') id: string,

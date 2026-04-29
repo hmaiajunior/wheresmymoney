@@ -120,7 +120,7 @@ export class TransactionsService {
     const originDate = new Date(dto.date);
 
     if (dto.type === 'DESPESA' && dto.expenseType === 'FIXO') {
-      // Replica até dezembro do mesmo ano com amount=0
+      // Replica até dezembro do mesmo ano com o mesmo valor e isConfirmed=false
       const endMonth = 12;
       for (let m = originDate.getMonth() + 2; m <= endMonth; m++) {
         const replicaDate = new Date(originDate);
@@ -129,11 +129,12 @@ export class TransactionsService {
           date: replicaDate,
           type: dto.type,
           description: dto.description,
-          amount: new Prisma.Decimal(0),
+          amount: new Prisma.Decimal(dto.amount),
           categoryId: dto.categoryId ?? null,
           paymentMethodId: dto.paymentMethodId ?? null,
           expenseType: dto.expenseType,
           isInstallment: false,
+          isConfirmed: false,
           userId,
         });
       }
@@ -167,6 +168,15 @@ export class TransactionsService {
     }
 
     return origin;
+  }
+
+  async confirm(id: string, userId: string) {
+    await this.findOne(id, userId);
+    return this.prisma.transaction.update({
+      where: { id },
+      data: { isConfirmed: true },
+      include: { category: true, paymentMethod: true },
+    });
   }
 
   async update(id: string, userId: string, dto: Partial<CreateTransactionDto>) {
