@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -45,17 +45,35 @@ const currentYear = new Date().getFullYear();
 const YEARS = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
 export default function TransactionsPage() {
-  const [filters, setFilters] = useState({
-    type: '',
-    expenseType: '',
-    categoryIds: [] as string[],
-    paymentMethodId: '',
-    isInstallment: '',
-    month: '',
-    year: String(currentYear),
-    search: '',
-    page: 1,
-  });
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const filters = {
+    type: searchParams.get('type') ?? '',
+    expenseType: searchParams.get('expenseType') ?? '',
+    categoryIds: searchParams.getAll('categoryIds'),
+    paymentMethodId: searchParams.get('paymentMethodId') ?? '',
+    isInstallment: searchParams.get('isInstallment') ?? '',
+    month: searchParams.get('month') ?? '',
+    year: searchParams.get('year') ?? String(currentYear),
+    search: searchParams.get('search') ?? '',
+    page: Number(searchParams.get('page') ?? 1),
+  };
+
+  const setFilters = (updater: typeof filters | ((prev: typeof filters) => typeof filters)) => {
+    const next = typeof updater === 'function' ? updater(filters) : updater;
+    const params = new URLSearchParams();
+    if (next.type) params.set('type', next.type);
+    if (next.expenseType) params.set('expenseType', next.expenseType);
+    next.categoryIds.forEach((id) => params.append('categoryIds', id));
+    if (next.paymentMethodId) params.set('paymentMethodId', next.paymentMethodId);
+    if (next.isInstallment) params.set('isInstallment', next.isInstallment);
+    if (next.month) params.set('month', next.month);
+    if (next.year && next.year !== String(currentYear)) params.set('year', next.year);
+    if (next.search) params.set('search', next.search);
+    if (next.page > 1) params.set('page', String(next.page));
+    router.replace(`/transactions${params.toString() ? `?${params}` : ''}`);
+  };
 
   const queryClient = useQueryClient();
 
@@ -99,10 +117,7 @@ export default function TransactionsPage() {
   const availableCategories = hasContextFilters ? (filterOptions?.categories ?? []) : (allCategories ?? []);
   const availablePaymentMethods = hasContextFilters ? (filterOptions?.paymentMethods ?? []) : (allPaymentMethods ?? []);
 
-  // Limpa paymentMethodId se não está mais disponível
-  if (filters.paymentMethodId && availablePaymentMethods.length > 0 && !availablePaymentMethods.find((p) => p.id === filters.paymentMethodId)) {
-    setFilters((f) => ({ ...f, paymentMethodId: '', page: 1 }));
-  }
+
 
   // Monta queryParams para a listagem
   const queryParams = new URLSearchParams(baseParams);
