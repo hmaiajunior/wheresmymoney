@@ -41,6 +41,18 @@ const MONTHS = [
   { value: '11', label: 'Novembro' },{ value: '12', label: 'Dezembro' },
 ];
 
+const EXPENSE_TYPES = [
+  { value: 'FIXO', label: 'Fixo' },
+  { value: 'ESPORADICO', label: 'Esporádico' },
+  { value: 'TERCEIROS', label: 'Terceiros' },
+];
+
+const TYPE_OPTIONS = [
+  { value: '', label: 'Todos' },
+  { value: 'RECEITA', label: 'Receita' },
+  { value: 'DESPESA', label: 'Despesa' },
+];
+
 const currentYear = new Date().getFullYear();
 const YEARS = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
 
@@ -50,7 +62,7 @@ export default function TransactionsPage() {
 
   const filters = {
     type: searchParams.get('type') ?? '',
-    expenseType: searchParams.get('expenseType') ?? '',
+    expenseTypes: searchParams.getAll('expenseTypes'),
     categoryIds: searchParams.getAll('categoryIds'),
     paymentMethodId: searchParams.get('paymentMethodId') ?? '',
     isInstallment: searchParams.get('isInstallment') ?? '',
@@ -64,7 +76,7 @@ export default function TransactionsPage() {
     const next = typeof updater === 'function' ? updater(filters) : updater;
     const params = new URLSearchParams();
     if (next.type) params.set('type', next.type);
-    if (next.expenseType) params.set('expenseType', next.expenseType);
+    next.expenseTypes.forEach((et) => params.append('expenseTypes', et));
     next.categoryIds.forEach((id) => params.append('categoryIds', id));
     if (next.paymentMethodId) params.set('paymentMethodId', next.paymentMethodId);
     if (next.isInstallment) params.set('isInstallment', next.isInstallment);
@@ -92,10 +104,9 @@ export default function TransactionsPage() {
     queryFn: () => api.get('/payment-methods').then((r) => r.data),
   });
 
-  // Params base (sem categoryIds/paymentMethodId) para filter-options
   const baseParams = new URLSearchParams();
   if (filters.type) baseParams.set('type', filters.type);
-  if (filters.expenseType) baseParams.set('expenseType', filters.expenseType);
+  filters.expenseTypes.forEach((et) => baseParams.append('expenseTypes', et));
   if (filters.search) baseParams.set('search', filters.search);
   if (filters.month && filters.year) {
     baseParams.set('from', `${filters.year}-${filters.month}-01`);
@@ -106,10 +117,10 @@ export default function TransactionsPage() {
     baseParams.set('to', `${filters.year}-12-31`);
   }
 
-  const hasContextFilters = !!(filters.type || filters.expenseType || filters.month || filters.search);
+  const hasContextFilters = !!(filters.type || filters.expenseTypes.length || filters.month || filters.search);
 
   const { data: filterOptions } = useQuery<{ categories: Category[]; paymentMethods: PaymentMethod[] }>({
-    queryKey: ['filter-options', filters.type, filters.expenseType, filters.month, filters.year, filters.search],
+    queryKey: ['filter-options', filters.type, filters.expenseTypes, filters.month, filters.year, filters.search],
     queryFn: () => api.get(`/transactions/filter-options?${baseParams}`).then((r) => r.data),
     enabled: hasContextFilters,
   });
@@ -117,9 +128,6 @@ export default function TransactionsPage() {
   const availableCategories = hasContextFilters ? (filterOptions?.categories ?? []) : (allCategories ?? []);
   const availablePaymentMethods = hasContextFilters ? (filterOptions?.paymentMethods ?? []) : (allPaymentMethods ?? []);
 
-
-
-  // Monta queryParams para a listagem
   const queryParams = new URLSearchParams(baseParams);
   filters.categoryIds.forEach((id) => queryParams.append('categoryIds', id));
   if (filters.paymentMethodId) queryParams.set('paymentMethodId', filters.paymentMethodId);
@@ -135,17 +143,24 @@ export default function TransactionsPage() {
   const set = (key: string, value: string) =>
     setFilters((f) => ({ ...f, [key]: value, page: 1 }));
 
+  const toggleExpenseType = (et: string) =>
+    setFilters((f) => ({
+      ...f, page: 1,
+      expenseTypes: f.expenseTypes.includes(et)
+        ? f.expenseTypes.filter((e) => e !== et)
+        : [...f.expenseTypes, et],
+    }));
+
   const toggleCategory = (id: string) =>
     setFilters((f) => ({
-      ...f,
-      page: 1,
+      ...f, page: 1,
       categoryIds: f.categoryIds.includes(id)
         ? f.categoryIds.filter((c) => c !== id)
         : [...f.categoryIds, id],
     }));
 
   const hasActiveFilters =
-    filters.type || filters.expenseType || filters.categoryIds.length > 0 ||
+    filters.type || filters.expenseTypes.length > 0 || filters.categoryIds.length > 0 ||
     filters.paymentMethodId || filters.isInstallment || filters.month || filters.search;
 
   return (
@@ -161,83 +176,92 @@ export default function TransactionsPage() {
       </div>
 
       {/* Filtros */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
-        {/* Linha 1: busca + tipo + subtipo */}
-        <div className="flex gap-3 flex-wrap">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
+        {/* Linha 1: busca + período + pagamento */}
+        <div className="flex gap-3 flex-wrap items-center">
           <input
             type="text"
             placeholder="Buscar descrição..."
             value={filters.search}
             onChange={(e) => set('search', e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm flex-1 min-w-40 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm flex-1 min-w-48 focus:outline-none focus:ring-2 focus:ring-green-500"
           />
-          <select
-            value={filters.type}
-            onChange={(e) => set('type', e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            <option value="">Todos os tipos</option>
-            <option value="RECEITA">Receita</option>
-            <option value="DESPESA">Despesa</option>
-          </select>
-          <select
-            value={filters.expenseType}
-            onChange={(e) => set('expenseType', e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-          >
-            <option value="">Todos os subtipos</option>
-            <option value="FIXO">Fixo</option>
-            <option value="ESPORADICO">Esporádico</option>
-            <option value="TERCEIROS">Terceiros</option>
-          </select>
-        </div>
-
-        {/* Linha 2: mês + ano + pagamento */}
-        <div className="flex gap-3 flex-wrap">
           <select
             value={filters.month}
             onChange={(e) => set('month', e.target.value)}
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">Todos os meses</option>
-            {MONTHS.map((m) => (
-              <option key={m.value} value={m.value}>{m.label}</option>
-            ))}
+            {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
           <select
             value={filters.year}
             onChange={(e) => set('year', e.target.value)}
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
           >
-            {YEARS.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
+            {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           <select
             value={filters.paymentMethodId}
             onChange={(e) => set('paymentMethodId', e.target.value)}
-            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 flex-1 min-w-36"
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
           >
             <option value="">Todas as formas de pagamento</option>
-            {availablePaymentMethods.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
+            {availablePaymentMethods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <button
-            onClick={() => set('isInstallment', filters.isInstallment === 'true' ? '' : 'true')}
-            className={`px-3 py-1.5 rounded-lg text-sm border transition-colors whitespace-nowrap ${
-              filters.isInstallment === 'true'
-                ? 'bg-purple-600 text-white border-purple-600'
-                : 'border-slate-300 text-slate-600 hover:border-slate-400'
-            }`}
-          >
-            🔁 Parceladas
-          </button>
         </div>
 
-        {/* Linha 3: tags de categoria */}
+        {/* Linha 2: tipo + subtipos (multi-select) + parceladas */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-400 font-medium">Tipo:</span>
+            {TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => set('type', opt.value)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  filters.type === opt.value
+                    ? 'bg-slate-700 text-white border-slate-700'
+                    : 'border-slate-300 text-slate-600 hover:border-slate-500'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-400 font-medium">Subtipo:</span>
+            {EXPENSE_TYPES.map((et) => (
+              <button
+                key={et.value}
+                onClick={() => toggleExpenseType(et.value)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  filters.expenseTypes.includes(et.value)
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-slate-300 text-slate-600 hover:border-slate-500'
+                }`}
+              >
+                {et.label}
+              </button>
+            ))}
+            <button
+              onClick={() => set('isInstallment', filters.isInstallment === 'true' ? '' : 'true')}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                filters.isInstallment === 'true'
+                  ? 'bg-purple-600 text-white border-purple-600'
+                  : 'border-slate-300 text-slate-600 hover:border-slate-500'
+              }`}
+            >
+              Parceladas
+            </button>
+          </div>
+        </div>
+
+        {/* Linha 3: categorias */}
         {availableCategories.length > 0 && (
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-slate-400 font-medium">Categoria:</span>
             {availableCategories.map((c) => {
               const selected = filters.categoryIds.includes(c.id);
               return (
@@ -258,10 +282,9 @@ export default function TransactionsPage() {
           </div>
         )}
 
-        {/* Limpar filtros */}
         {hasActiveFilters && (
           <button
-            onClick={() => setFilters({ type: '', expenseType: '', categoryIds: [], paymentMethodId: '', isInstallment: '', month: '', year: String(currentYear), search: '', page: 1 })}
+            onClick={() => setFilters({ type: '', expenseTypes: [], categoryIds: [], paymentMethodId: '', isInstallment: '', month: '', year: String(currentYear), search: '', page: 1 })}
             className="text-xs text-slate-500 hover:text-red-600 underline"
           >
             Limpar filtros
@@ -271,7 +294,6 @@ export default function TransactionsPage() {
 
       {/* Tabela */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        {/* Totalizador */}
         {data && (
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
             <span className="text-xs text-slate-500">
@@ -282,7 +304,7 @@ export default function TransactionsPage() {
                 <span className="text-sm font-bold text-green-700">+{formatCurrency(data.totalReceitas)}</span>
               ) : filters.type === 'DESPESA' ? (
                 <span className="text-sm font-bold text-red-700">−{formatCurrency(data.totalDespesas)}</span>
-              ) : filters.type === '' && !hasActiveFilters ? (
+              ) : !hasActiveFilters ? (
                 <span className="text-sm font-bold text-slate-400">{formatCurrency(0)}</span>
               ) : (
                 <>
@@ -315,9 +337,7 @@ export default function TransactionsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {data.data.map((t) => (
                     <tr key={t.id} className={`transition-colors ${!t.isConfirmed ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50'}`}>
-                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                        {formatDate(t.date)}
-                      </td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(t.date)}</td>
                       <td className="px-4 py-3 text-slate-800 max-w-xs">
                         <span className="block truncate">{t.description}</span>
                         {t.isInstallment && t.installmentInfo && (
@@ -347,12 +367,9 @@ export default function TransactionsPage() {
                           )}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-slate-500">
-                        {t.paymentMethod?.name ?? '—'}
-                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{t.paymentMethod?.name ?? '—'}</td>
                       <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${t.type === 'RECEITA' ? 'text-green-700' : 'text-red-700'}`}>
-                        {t.type === 'DESPESA' ? '−' : '+'}
-                        {formatCurrency(Number(t.amount))}
+                        {t.type === 'DESPESA' ? '−' : '+'}{formatCurrency(Number(t.amount))}
                       </td>
                       <td className="px-4 py-3 flex items-center gap-2 justify-end">
                         {!t.isConfirmed && (

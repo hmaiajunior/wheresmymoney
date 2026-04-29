@@ -20,6 +20,7 @@ export interface TransactionFiltersDto {
   categoryId?: string;
   categoryIds?: string | string[];
   expenseType?: ExpenseType;
+  expenseTypes?: string | string[]; // múltiplos subtipos
   paymentMethodId?: string;
   isInstallment?: string; // 'true' | 'false' (query param é string)
   from?: string;
@@ -34,7 +35,7 @@ export class TransactionsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(userId: string, filters: TransactionFiltersDto = {}) {
-    const { type, categoryId, categoryIds, expenseType, paymentMethodId, isInstallment, from, to, search, page = 1, limit = 50 } = filters;
+    const { type, categoryId, categoryIds, expenseType, expenseTypes, paymentMethodId, isInstallment, from, to, search, page = 1, limit = 50 } = filters;
 
     const where: Prisma.TransactionWhereInput = { userId };
     if (type) where.type = type;
@@ -44,7 +45,14 @@ export class TransactionsService {
     } else if (categoryId) {
       where.categoryId = categoryId;
     }
-    if (expenseType) where.expenseType = expenseType;
+    // expenseTypes tem prioridade sobre expenseType (legado)
+    if (expenseTypes) {
+      const types = (Array.isArray(expenseTypes) ? expenseTypes : [expenseTypes]) as ExpenseType[];
+      if (types.length === 1) where.expenseType = types[0];
+      else if (types.length > 1) where.expenseType = { in: types };
+    } else if (expenseType) {
+      where.expenseType = expenseType;
+    }
     if (paymentMethodId) where.paymentMethodId = paymentMethodId;
     if (isInstallment !== undefined && isInstallment !== '') where.isInstallment = isInstallment === 'true';
     if (from || to) {
