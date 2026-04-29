@@ -223,7 +223,7 @@ export default function DashboardPage() {
             ? `${variationSaldo >= 0 ? '+' : ''}${formatCurrency(variationSaldo)} vs mês anterior`
             : undefined}
         />
-        <SummaryCard label="Pago a terceiros" value={totals.despesasTerceiros} color="slate" hint="não entra no saldo" />
+        <SummaryCard label="Terceiros" value={totals.despesasTerceiros} color="slate" hint="não entra no saldo" />
       </div>
 
       {/* Subcards de despesas */}
