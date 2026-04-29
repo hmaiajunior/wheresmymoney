@@ -17,6 +17,7 @@ export default function NewTransactionPage() {
   const [form, setForm] = useState({
     type: 'DESPESA',
     date: today,
+    cycleMonth: '', // "YYYY-MM" — opcional
     description: '',
     amount: '',
     categoryId: '',
@@ -46,6 +47,7 @@ export default function NewTransactionPage() {
       api.post('/transactions', {
         ...data,
         date: new Date(data.date + 'T12:00:00').toISOString(),
+        cycleDate: data.cycleMonth ? new Date(data.cycleMonth + '-01T12:00:00').toISOString() : undefined,
         amount: parseFloat(data.amount.replace(',', '.')),
         categoryId: data.categoryId || undefined,
         paymentMethodId: data.paymentMethodId || undefined,
@@ -63,6 +65,7 @@ export default function NewTransactionPage() {
         setForm((f) => ({
           ...f,
           date: today,
+          cycleMonth: '',
           description: '',
           amount: '',
           categoryId: '',
@@ -144,6 +147,39 @@ export default function NewTransactionPage() {
             />
           </Field>
         </div>
+
+        <Field label="Ciclo de referência">
+          <div className="flex gap-2">
+            <select
+              value={form.cycleMonth.split('-')[1] ?? ''}
+              onChange={(e) => {
+                const year = form.cycleMonth.split('-')[0] || String(new Date().getFullYear());
+                set('cycleMonth', e.target.value ? `${year}-${e.target.value}` : '');
+              }}
+              className={inputClass}
+            >
+              <option value="">Mês (opcional)</option>
+              {[
+                ['01','Janeiro'],['02','Fevereiro'],['03','Março'],['04','Abril'],
+                ['05','Maio'],['06','Junho'],['07','Julho'],['08','Agosto'],
+                ['09','Setembro'],['10','Outubro'],['11','Novembro'],['12','Dezembro'],
+              ].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <select
+              value={form.cycleMonth.split('-')[0] ?? ''}
+              onChange={(e) => {
+                const month = form.cycleMonth.split('-')[1] || '';
+                set('cycleMonth', month ? `${e.target.value}-${month}` : '');
+              }}
+              className={inputClass}
+            >
+              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 1 + i).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">Opcional. Use quando a despesa pertence a um ciclo diferente da data do lançamento.</p>
+        </Field>
 
         <Field label="Descrição" required>
           <input

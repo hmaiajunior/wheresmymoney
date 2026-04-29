@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export interface CreateTransactionDto {
   date: string;
+  cycleDate?: string; // mês de referência do ciclo (ex: "2026-04-01")
   type: TransactionType;
   categoryId?: string;
   source?: string;
@@ -118,6 +119,7 @@ export class TransactionsService {
       data: {
         ...data,
         date: new Date(dto.date),
+        cycleDate: dto.cycleDate ? new Date(dto.cycleDate) : undefined,
         amount: new Prisma.Decimal(dto.amount),
         userId,
       },
