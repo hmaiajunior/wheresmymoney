@@ -44,7 +44,7 @@ const MONTHS = [
 
 export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [selectedMonths, setSelectedMonths] = useState<number[]>([currentMonth]);
   const [cycleMsg, setCycleMsg] = useState('');
   const [showCyclePicker, setShowCyclePicker] = useState(false);
   const nextMonthDefault = currentMonth === 12 ? 1 : currentMonth + 1;
@@ -58,11 +58,11 @@ export default function DashboardPage() {
   });
 
   const { data: categorySlices } = useQuery<CategorySlice[]>({
-    queryKey: ['summary-by-category', selectedYear, selectedMonth],
+    queryKey: ['summary-by-category', selectedYear, selectedMonths],
     queryFn: () => api
-      .get(`/summary/${selectedYear}/${selectedMonth || currentMonth}/by-category`)
+      .get(`/summary/${selectedYear}/${selectedMonths[0] || currentMonth}/by-category`)
       .then((r) => r.data),
-    enabled: selectedMonth > 0,
+    enabled: selectedMonths.length === 1,
   });
 
   const cycleMutation = useMutation({
@@ -93,9 +93,9 @@ export default function DashboardPage() {
 
   const activeSummaries = (summaries ?? []).filter((s) => s.receitas > 0 || s.totalDespesas > 0 || s.transactionCount > 0);
 
-  const visibleSummaries = selectedMonth === 0
+  const visibleSummaries = selectedMonths.length === 0
     ? activeSummaries
-    : activeSummaries.filter((s) => s.month === selectedMonth);
+    : activeSummaries.filter((s) => selectedMonths.includes(s.month));
 
   const totals = visibleSummaries.reduce(
     (acc, s) => ({
@@ -109,17 +109,22 @@ export default function DashboardPage() {
     { receitas: 0, despesasFixas: 0, despesasEsporadicas: 0, despesasTerceiros: 0, totalDespesas: 0, saldo: 0 },
   );
 
-  // Comparação com mês anterior
-  const prevSummary = selectedMonth > 0
-    ? activeSummaries.find((s) => s.month === selectedMonth - 1)
+  // Comparação com mês anterior (só quando exatamente 1 mês selecionado)
+  const prevSummary = selectedMonths.length === 1
+    ? activeSummaries.find((s) => s.month === selectedMonths[0] - 1)
     : undefined;
-  const variationSaldo = prevSummary
-    ? totals.saldo - prevSummary.saldo
-    : 0;
+  const variationSaldo = prevSummary ? totals.saldo - prevSummary.saldo : 0;
 
-  const cardLabel = selectedMonth === 0
+  const cardLabel = selectedMonths.length === 0
     ? `Acumulado ${selectedYear}`
-    : `${getMonthName(selectedMonth)} ${selectedYear}`;
+    : selectedMonths.length === 1
+      ? `${getMonthName(selectedMonths[0])} ${selectedYear}`
+      : `${selectedMonths.map(getMonthName).join(', ')} ${selectedYear}`;
+
+  const toggleMonth = (m: number) =>
+    setSelectedMonths((prev) =>
+      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m].sort((a, b) => a - b),
+    );
 
   const expensesPct = totals.receitas > 0 ? (totals.totalDespesas / totals.receitas) * 100 : 0;
 
@@ -185,30 +190,51 @@ export default function DashboardPage() {
       </div>
 
       {/* Filtros de período */}
-      <div className="flex gap-3 items-center flex-wrap bg-white rounded-xl border border-slate-200 px-4 py-3">
-        <span className="text-xs text-slate-500 font-medium">Período:</span>
-        <select
-          value={selectedYear}
-          onChange={(e) => setSelectedYear(Number(e.target.value))}
-          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        >
-          {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(Number(e.target.value))}
-          className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        >
-          {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-        </select>
-        {(selectedYear !== currentYear || selectedMonth !== currentMonth) && (
-          <button
-            onClick={() => { setSelectedYear(currentYear); setSelectedMonth(currentMonth); }}
-            className="text-xs text-slate-500 hover:text-emerald-600 underline"
+      <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 space-y-3">
+        <div className="flex gap-3 items-center flex-wrap">
+          <span className="text-xs text-slate-500 font-medium">Ano:</span>
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
-            Voltar para mês atual
+            {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {(selectedYear !== currentYear || selectedMonths.length !== 1 || selectedMonths[0] !== currentMonth) && (
+            <button
+              onClick={() => { setSelectedYear(currentYear); setSelectedMonths([currentMonth]); }}
+              className="text-xs text-slate-500 hover:text-emerald-600 underline"
+            >
+              Voltar para mês atual
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-xs text-slate-500 font-medium mr-1">Meses:</span>
+          <button
+            onClick={() => setSelectedMonths([])}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+              selectedMonths.length === 0
+                ? 'bg-slate-700 text-white border-slate-700'
+                : 'border-slate-300 text-slate-600 hover:border-slate-500'
+            }`}
+          >
+            Todos
           </button>
-        )}
+          {MONTHS.filter((m) => m.value > 0).map((m) => (
+            <button
+              key={m.value}
+              onClick={() => toggleMonth(m.value)}
+              className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                selectedMonths.includes(m.value)
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'border-slate-300 text-slate-600 hover:border-slate-500'
+              }`}
+            >
+              {m.label.slice(0, 3)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Cards principais */}
@@ -232,8 +258,8 @@ export default function DashboardPage() {
         <DetailCard label="Despesas Esporádicas" value={totals.despesasEsporadicas} pct={totals.totalDespesas > 0 ? (totals.despesasEsporadicas / totals.totalDespesas) * 100 : 0} color="bg-orange-500" />
       </div>
 
-      {/* Pizza por categoria + Top categorias */}
-      {selectedMonth > 0 && categorySlices && categorySlices.length > 0 && (
+      {/* Pizza por categoria + Top categorias — só quando exatamente 1 mês selecionado */}
+      {selectedMonths.length === 1 && categorySlices && categorySlices.length > 0 && (
         <div className="grid lg:grid-cols-2 gap-4">
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <h3 className="font-semibold text-slate-700 mb-4">Distribuição por categoria</h3>
@@ -336,7 +362,7 @@ export default function DashboardPage() {
                   </tr>
                 ))}
               </tbody>
-              {selectedMonth === 0 && visibleSummaries.length > 1 && (
+              {selectedMonths.length !== 1 && visibleSummaries.length > 1 && (
                 <tfoot>
                   <tr className="bg-slate-50 font-semibold text-slate-700 border-t-2 border-slate-200">
                     <td className="px-6 py-3">Total</td>
