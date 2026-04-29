@@ -78,7 +78,7 @@ export default function EditTransactionPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
-      router.push('/transactions');
+      router.back();
     },
     onError: (e: unknown) => {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -91,7 +91,7 @@ export default function EditTransactionPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
-      router.push('/transactions');
+      router.back();
     },
   });
 
