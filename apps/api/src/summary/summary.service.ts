@@ -21,30 +21,25 @@ export class SummaryService {
 
   /**
    * Constrói a cláusula WHERE para o período.
-   * Prioridade:
-   *  1. Transações com cycleDate preenchido: agrupa pelo mês/ano de cycleDate
-   *  2. Transações sem cycleDate: usa intervalo de datas calculado por cycleStartDay
+   * Agrupa pelo mês calendário em ambos os casos:
+   *  1. Transações com cycleDate preenchido: usa o mês/ano de cycleDate
+   *  2. Transações sem cycleDate: usa o mês/ano de date
    */
   private buildPeriodWhere(
     userId: string,
     year: number,
     month: number,
-    cycleStartDay: number,
+    _cycleStartDay: number,
     extra: Prisma.TransactionWhereInput = {},
   ): Prisma.TransactionWhereInput {
-    const { start, end } = this.getCycleBounds(year, month, cycleStartDay);
-
-    // Início e fim do mês calendário para match do cycleDate (sempre 1º do mês)
-    const cycleMonthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
-    const cycleMonthEnd = new Date(year, month, 0, 23, 59, 59, 999); // último dia do mês
+    const monthStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
 
     return {
       userId,
       OR: [
-        // Transações importadas da planilha (cycleDate preenchido)
-        { cycleDate: { gte: cycleMonthStart, lte: cycleMonthEnd }, ...extra },
-        // Transações lançadas manualmente (cycleDate nulo)
-        { cycleDate: null, date: { gte: start, lte: end }, ...extra },
+        { cycleDate: { gte: monthStart, lte: monthEnd }, ...extra },
+        { cycleDate: null, date: { gte: monthStart, lte: monthEnd }, ...extra },
       ],
     };
   }
