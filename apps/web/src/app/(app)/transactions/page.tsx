@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -95,6 +96,27 @@ export default function TransactionsPage() {
     mutationFn: (id: string) => api.patch(`/transactions/${id}/confirm`).then((r) => r.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
   });
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.delete('/transactions', { data: { ids } }),
+    onSuccess: () => {
+      setSelectedIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['summary'] });
+    },
+  });
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = (ids: string[]) =>
+    setSelectedIds((prev) => prev.size === ids.length ? new Set() : new Set(ids));
 
   const { data: allCategories } = useQuery<Category[]>({
     queryKey: ['categories'],
@@ -338,10 +360,42 @@ export default function TransactionsPage() {
           <div className="p-8 text-center text-slate-400">Nenhum lançamento encontrado.</div>
         ) : (
           <>
+            {selectedIds.size > 0 && (
+              <div className="flex items-center justify-between px-4 py-2.5 bg-red-50 border-b border-red-100">
+                <span className="text-sm text-red-700 font-medium">{selectedIds.size} selecionado(s)</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs text-slate-500 hover:text-slate-700 underline"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Remover ${selectedIds.size} lançamento(s)?`)) {
+                        bulkDeleteMutation.mutate([...selectedIds]);
+                      }
+                    }}
+                    disabled={bulkDeleteMutation.isPending}
+                    className="bg-red-600 text-white px-3 py-1 rounded text-xs font-medium hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {bulkDeleteMutation.isPending ? 'Removendo...' : '🗑️ Remover selecionados'}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-slate-600">
+                    <th className="px-4 py-3 w-8">
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded"
+                        checked={data.data.length > 0 && selectedIds.size === data.data.length}
+                        onChange={() => toggleSelectAll(data.data.map((t) => t.id))}
+                      />
+                    </th>
                     <th className="text-left px-4 py-3 font-medium">Data</th>
                     <th className="text-left px-4 py-3 font-medium">Descrição</th>
                     <th className="text-left px-4 py-3 font-medium">Categoria</th>
@@ -353,7 +407,15 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.data.map((t) => (
-                    <tr key={t.id} className={`transition-colors ${!t.isConfirmed ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50'}`}>
+                    <tr key={t.id} className={`transition-colors ${selectedIds.has(t.id) ? 'bg-red-50' : !t.isConfirmed ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50'}`}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded"
+                          checked={selectedIds.has(t.id)}
+                          onChange={() => toggleSelect(t.id)}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(t.date)}</td>
                       <td className="px-4 py-3 text-slate-800 max-w-xs">
                         <span className="block truncate">{t.description}</span>

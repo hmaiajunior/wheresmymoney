@@ -192,6 +192,12 @@ export class TransactionsService {
     return this.prisma.transaction.delete({ where: { id } });
   }
 
+  async bulkRemove(ids: string[], userId: string) {
+    return this.prisma.transaction.deleteMany({
+      where: { id: { in: ids }, userId },
+    });
+  }
+
   async findFilterOptions(userId: string, filters: Omit<TransactionFiltersDto, 'categoryId' | 'paymentMethodId' | 'page' | 'limit'>) {
     const { type, expenseTypes, expenseType, from, to, search } = filters;
 

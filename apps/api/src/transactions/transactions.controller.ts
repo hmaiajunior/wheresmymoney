@@ -47,6 +47,11 @@ export class TransactionsController {
     return this.transactionsService.update(id, req.user.id, dto);
   }
 
+  @Delete()
+  bulkRemove(@Request() req: { user: { id: string } }, @Body() body: { ids: string[] }) {
+    return this.transactionsService.bulkRemove(body.ids, req.user.id);
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string, @Request() req: { user: { id: string } }) {
     return this.transactionsService.remove(id, req.user.id);
