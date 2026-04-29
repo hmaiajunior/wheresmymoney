@@ -126,13 +126,24 @@ export default function NewTransactionPage() {
 
         <div className="grid grid-cols-2 gap-4">
           <Field label="Data" required>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => set('date', e.target.value)}
-              required
-              className={inputClass}
-            />
+            <div className="space-y-1.5">
+              <input
+                type="date"
+                value={form.date}
+                onChange={(e) => set('date', e.target.value)}
+                required
+                className={inputClass}
+              />
+              <div className="flex gap-1">
+                <DateShortcut label="Hoje" date={today} current={form.date} onClick={() => set('date', today)} />
+                <DateShortcut
+                  label="Ontem"
+                  date={new Date(Date.now() - 86400000).toISOString().slice(0, 10)}
+                  current={form.date}
+                  onClick={() => set('date', new Date(Date.now() - 86400000).toISOString().slice(0, 10))}
+                />
+              </div>
+            </div>
           </Field>
 
           <Field label="Valor (R$)" required>
@@ -341,5 +352,20 @@ function Field({ label, children, required }: { label: string; children: React.R
       </label>
       {children}
     </div>
+  );
+}
+
+function DateShortcut({ label, date, current, onClick }: { label: string; date: string; current: string; onClick: () => void }) {
+  const active = current === date;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-[11px] px-2 py-0.5 rounded-md border transition-colors ${
+        active ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+      }`}
+    >
+      {label}
+    </button>
   );
 }

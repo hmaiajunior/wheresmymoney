@@ -126,39 +126,25 @@ export class TransactionsService {
       include: { category: true, paymentMethod: true },
     });
 
-    const replicas: Prisma.TransactionCreateManyInput[] = [];
-    const originDate = new Date(dto.date);
-
-    if (dto.type === 'DESPESA' && dto.expenseType === 'FIXO') {
-      // Replica até dezembro do mesmo ano com o mesmo valor e isConfirmed=false
-      const endMonth = 12;
-      for (let m = originDate.getMonth() + 2; m <= endMonth; m++) {
-        const replicaDate = new Date(originDate);
-        replicaDate.setMonth(m - 1);
-        replicas.push({
-          date: replicaDate,
-          type: dto.type,
-          description: dto.description,
-          amount: new Prisma.Decimal(dto.amount),
-          categoryId: dto.categoryId ?? null,
-          paymentMethodId: dto.paymentMethodId ?? null,
-          expenseType: dto.expenseType,
-          isInstallment: false,
-          isConfirmed: false,
-          userId,
-        });
-      }
-    } else if (dto.isInstallment && dto.installmentInfo) {
-      // Formato esperado: "1/12" — parcela atual / total
+    // Replica APENAS parcelas (compra parcelada gera prestações futuras automaticamente).
+    // Despesas FIXAS são propagadas via "Gerar próximo ciclo" no dashboard, evitando duplicação.
+    if (dto.isInstallment && dto.installmentInfo) {
       const match = dto.installmentInfo.match(/^(\d+)\/(\d+)$/);
       if (match) {
+        const originDate = new Date(dto.date);
+        const baseCycle = dto.cycleDate ? new Date(dto.cycleDate) : null;
         const current = parseInt(match[1], 10);
         const total = parseInt(match[2], 10);
+        const replicas: Prisma.TransactionCreateManyInput[] = [];
         for (let i = 1; i < total - current + 1; i++) {
           const replicaDate = new Date(originDate);
           replicaDate.setMonth(originDate.getMonth() + i);
+          const replicaCycle = baseCycle
+            ? new Date(baseCycle.getFullYear(), baseCycle.getMonth() + i, 1, 12, 0, 0, 0)
+            : null;
           replicas.push({
             date: replicaDate,
+            cycleDate: replicaCycle,
             type: dto.type,
             description: dto.description,
             amount: new Prisma.Decimal(dto.amount),
@@ -170,11 +156,10 @@ export class TransactionsService {
             userId,
           });
         }
+        if (replicas.length > 0) {
+          await this.prisma.transaction.createMany({ data: replicas });
+        }
       }
-    }
-
-    if (replicas.length > 0) {
-      await this.prisma.transaction.createMany({ data: replicas });
     }
 
     return origin;
@@ -207,15 +192,27 @@ export class TransactionsService {
   }
 
   async findFilterOptions(userId: string, filters: Omit<TransactionFiltersDto, 'categoryId' | 'paymentMethodId' | 'page' | 'limit'>) {
-    const { type, expenseType, from, to, search } = filters;
+    const { type, expenseTypes, expenseType, from, to, search } = filters;
 
     const where: Prisma.TransactionWhereInput = { userId };
     if (type) where.type = type;
-    if (expenseType) where.expenseType = expenseType;
+    if (expenseTypes) {
+      const types = (Array.isArray(expenseTypes) ? expenseTypes : [expenseTypes]) as ExpenseType[];
+      if (types.length === 1) where.expenseType = types[0];
+      else if (types.length > 1) where.expenseType = { in: types };
+    } else if (expenseType) {
+      where.expenseType = expenseType;
+    }
     if (from || to) {
-      where.date = {};
-      if (from) where.date.gte = new Date(from);
-      if (to) where.date.lte = new Date(to);
+      const fromDate = from ? new Date(from) : undefined;
+      const toDate = to ? new Date(to) : undefined;
+      const dateRange: Prisma.DateTimeFilter = {};
+      if (fromDate) dateRange.gte = fromDate;
+      if (toDate) dateRange.lte = toDate;
+      where.OR = [
+        { cycleDate: dateRange },
+        { cycleDate: null, date: dateRange },
+      ];
     }
     if (search) where.description = { contains: search, mode: 'insensitive' };
 

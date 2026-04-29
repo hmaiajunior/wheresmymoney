@@ -66,6 +66,7 @@ export default function TransactionsPage() {
     categoryIds: searchParams.getAll('categoryIds'),
     paymentMethodId: searchParams.get('paymentMethodId') ?? '',
     isInstallment: searchParams.get('isInstallment') ?? '',
+    onlyPending: searchParams.get('onlyPending') === '1',
     month: searchParams.get('month') ?? '',
     year: searchParams.get('year') ?? String(currentYear),
     search: searchParams.get('search') ?? '',
@@ -80,6 +81,7 @@ export default function TransactionsPage() {
     next.categoryIds.forEach((id) => params.append('categoryIds', id));
     if (next.paymentMethodId) params.set('paymentMethodId', next.paymentMethodId);
     if (next.isInstallment) params.set('isInstallment', next.isInstallment);
+    if (next.onlyPending) params.set('onlyPending', '1');
     if (next.month) params.set('month', next.month);
     if (next.year && next.year !== String(currentYear)) params.set('year', next.year);
     if (next.search) params.set('search', next.search);
@@ -135,10 +137,15 @@ export default function TransactionsPage() {
   queryParams.set('page', String(filters.page));
   queryParams.set('limit', '50');
 
-  const { data, isLoading } = useQuery<TransactionsResponse>({
+  const { data: rawData, isLoading } = useQuery<TransactionsResponse>({
     queryKey: ['transactions', filters],
     queryFn: () => api.get(`/transactions?${queryParams}`).then((r) => r.data),
   });
+
+  // Filtragem cliente-side de pendentes (mantém totais consistentes com filtros do servidor)
+  const data = rawData && filters.onlyPending
+    ? { ...rawData, data: rawData.data.filter((t) => !t.isConfirmed) }
+    : rawData;
 
   const set = (key: string, value: string) =>
     setFilters((f) => ({ ...f, [key]: value, page: 1 }));
@@ -161,7 +168,7 @@ export default function TransactionsPage() {
 
   const hasActiveFilters =
     filters.type || filters.expenseTypes.length > 0 || filters.categoryIds.length > 0 ||
-    filters.paymentMethodId || filters.isInstallment || filters.month || filters.search;
+    filters.paymentMethodId || filters.isInstallment || filters.onlyPending || filters.month || filters.search;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -255,6 +262,16 @@ export default function TransactionsPage() {
             >
               Parceladas
             </button>
+            <button
+              onClick={() => setFilters((f) => ({ ...f, onlyPending: !f.onlyPending, page: 1 }))}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                filters.onlyPending
+                  ? 'bg-amber-500 text-white border-amber-500'
+                  : 'border-slate-300 text-slate-600 hover:border-slate-500'
+              }`}
+            >
+              ⚠ Pendentes
+            </button>
           </div>
         </div>
 
@@ -284,7 +301,7 @@ export default function TransactionsPage() {
 
         {hasActiveFilters && (
           <button
-            onClick={() => setFilters({ type: '', expenseTypes: [], categoryIds: [], paymentMethodId: '', isInstallment: '', month: '', year: String(currentYear), search: '', page: 1 })}
+            onClick={() => setFilters({ type: '', expenseTypes: [], categoryIds: [], paymentMethodId: '', isInstallment: '', onlyPending: false, month: '', year: String(currentYear), search: '', page: 1 })}
             className="text-xs text-slate-500 hover:text-red-600 underline"
           >
             Limpar filtros

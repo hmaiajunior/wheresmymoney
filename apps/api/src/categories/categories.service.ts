@@ -20,7 +20,9 @@ export class CategoriesService {
 
   async update(id: string, userId: string, data: { name?: string; color?: string }) {
     const cat = await this.prisma.category.findUnique({ where: { id } });
-    if (!cat || (cat.userId !== userId && cat.isSystem))
+    if (!cat) throw new NotFoundException('Categoria não encontrada');
+    // Sistema: permitido ajustar (single-user). Customizada: deve pertencer ao usuário.
+    if (!cat.isSystem && cat.userId !== userId)
       throw new NotFoundException('Categoria não encontrada');
     return this.prisma.category.update({ where: { id }, data });
   }

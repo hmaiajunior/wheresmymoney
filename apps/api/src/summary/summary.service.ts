@@ -93,8 +93,35 @@ export class SummaryService {
   }
 
   async getYearlySummary(userId: string, year: number) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const months = Array.from({ length: 12 }, (_, i) => i + 1);
-    return Promise.all(months.map((m) => this.getSummary(userId, year, m)));
+    return Promise.all(months.map((m) => this.getSummaryForUser(user.id, year, m, user.cycleStartDay)));
+  }
+
+  private async getSummaryForUser(userId: string, year: number, month: number, cycleStartDay: number) {
+    const { start, end } = this.getCycleBounds(year, month, cycleStartDay);
+    const where = (extra: Prisma.TransactionWhereInput) =>
+      this.buildPeriodWhere(userId, year, month, cycleStartDay, extra);
+
+    const [r, df, de, dt, count] = await Promise.all([
+      this.prisma.transaction.aggregate({ where: where({ type: 'RECEITA' }), _sum: { amount: true } }),
+      this.prisma.transaction.aggregate({ where: where({ type: 'DESPESA', expenseType: 'FIXO' }), _sum: { amount: true } }),
+      this.prisma.transaction.aggregate({ where: where({ type: 'DESPESA', expenseType: 'ESPORADICO' }), _sum: { amount: true } }),
+      this.prisma.transaction.aggregate({ where: where({ type: 'DESPESA', expenseType: 'TERCEIROS' }), _sum: { amount: true } }),
+      this.prisma.transaction.count({ where: where({}) }),
+    ]);
+
+    const receitas = Number(r._sum.amount ?? 0);
+    const despesasFixas = Number(df._sum.amount ?? 0);
+    const despesasEsporadicas = Number(de._sum.amount ?? 0);
+    const despesasTerceiros = Number(dt._sum.amount ?? 0);
+    const totalDespesas = despesasFixas + despesasEsporadicas;
+    return {
+      year, month, cycleStartDay,
+      cycleStart: start.toISOString(), cycleEnd: end.toISOString(),
+      receitas, despesasFixas, despesasEsporadicas, despesasTerceiros,
+      totalDespesas, saldo: receitas - totalDespesas, transactionCount: count,
+    };
   }
 
   async generateNextCycle(userId: string, targetMonth: number, targetYear: number) {
@@ -104,13 +131,15 @@ export class SummaryService {
     const baseMonth = targetMonth === 1 ? 12 : targetMonth - 1;
     const baseYear = targetMonth === 1 ? targetYear - 1 : targetYear;
 
-    // Verifica se já existem fixas ou parceladas no ciclo alvo
-    const { start: nextStart, end: nextEnd } = this.getCycleBounds(targetYear, targetMonth, user.cycleStartDay);
+    // Verifica se já existem fixas ou parceladas no ciclo alvo (usa cycleDate-aware where)
+    const targetCycleWhere = this.buildPeriodWhere(userId, targetYear, targetMonth, user.cycleStartDay);
     const existing = await this.prisma.transaction.count({
       where: {
-        userId, type: 'DESPESA',
-        date: { gte: nextStart, lte: nextEnd },
-        OR: [{ expenseType: 'FIXO' }, { isInstallment: true }],
+        AND: [
+          targetCycleWhere,
+          { type: 'DESPESA' },
+          { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
+        ],
       },
     });
     if (existing > 0) {
@@ -153,13 +182,15 @@ export class SummaryService {
       .map((t) => {
         const replicaDate = new Date(t.date);
         replicaDate.setMonth(replicaDate.getMonth() + 1);
+        // cycleDate sempre apontando para o 1º dia do ciclo alvo
+        const replicaCycle = new Date(targetYear, targetMonth - 1, 1, 12, 0, 0, 0);
 
         if (t.expenseType === 'FIXO') {
           return {
-            date: replicaDate, type: 'DESPESA' as const, description: t.description,
-            amount: new Prisma.Decimal(t.amount.toString()), categoryId: t.categoryId,
-            paymentMethodId: t.paymentMethodId, expenseType: 'FIXO' as const,
-            isInstallment: false, isConfirmed: false, userId,
+            date: replicaDate, cycleDate: replicaCycle, type: 'DESPESA' as const,
+            description: t.description, amount: new Prisma.Decimal(t.amount.toString()),
+            categoryId: t.categoryId, paymentMethodId: t.paymentMethodId,
+            expenseType: 'FIXO' as const, isInstallment: false, isConfirmed: false, userId,
           };
         }
 
@@ -167,10 +198,11 @@ export class SummaryService {
         const current = parseInt(match[1], 10);
         const total = parseInt(match[2], 10);
         return {
-          date: replicaDate, type: 'DESPESA' as const, description: t.description,
-          amount: new Prisma.Decimal(t.amount.toString()), categoryId: t.categoryId,
-          paymentMethodId: t.paymentMethodId, expenseType: t.expenseType,
-          isInstallment: true, installmentInfo: `${current + 1}/${total}`, userId,
+          date: replicaDate, cycleDate: replicaCycle, type: 'DESPESA' as const,
+          description: t.description, amount: new Prisma.Decimal(t.amount.toString()),
+          categoryId: t.categoryId, paymentMethodId: t.paymentMethodId,
+          expenseType: t.expenseType, isInstallment: true,
+          installmentInfo: `${current + 1}/${total}`, userId,
         };
       });
 
@@ -203,13 +235,37 @@ export class SummaryService {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const where = this.buildPeriodWhere(userId, year, month, user.cycleStartDay, {
       type: 'DESPESA',
+      // Despesas com terceiros entram em uma seção própria — separamos para o gráfico.
+      NOT: { expenseType: 'TERCEIROS' },
     });
 
-    return this.prisma.transaction.groupBy({
+    const grouped = await this.prisma.transaction.groupBy({
       by: ['categoryId'],
       where,
       _sum: { amount: true },
+      _count: { _all: true },
       orderBy: { _sum: { amount: 'desc' } },
     });
+
+    const ids = grouped.map((g) => g.categoryId).filter((id): id is string => !!id);
+    const categories = ids.length
+      ? await this.prisma.category.findMany({ where: { id: { in: ids } } })
+      : [];
+    const byId = new Map(categories.map((c) => [c.id, c]));
+
+    return grouped.map((g) => ({
+      categoryId: g.categoryId,
+      name: g.categoryId ? byId.get(g.categoryId)?.name ?? 'Sem categoria' : 'Sem categoria',
+      color: g.categoryId ? byId.get(g.categoryId)?.color ?? null : null,
+      amount: Number(g._sum.amount ?? 0),
+      count: g._count._all,
+    }));
+  }
+
+  async getPendingCount(userId: string) {
+    const count = await this.prisma.transaction.count({
+      where: { userId, isConfirmed: false },
+    });
+    return { count };
   }
 }
