@@ -10,7 +10,7 @@ interface PaymentMethod { id: string; name: string }
 interface Transaction {
   id: string; date: string; type: string; description: string; amount: string;
   categoryId?: string; source?: string; paymentMethodId?: string; expenseType?: string;
-  isInstallment: boolean; installmentInfo?: string;
+  isInstallment: boolean; installmentInfo?: string; isOneOff: boolean;
 }
 
 const inputClass = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500';
@@ -59,6 +59,7 @@ export default function EditTransactionPage() {
         expenseType: transaction.expenseType ?? 'ESPORADICO',
         isInstallment: transaction.isInstallment,
         installmentInfo: transaction.installmentInfo ?? '',
+        isOneOff: transaction.isOneOff,
       });
     }
   }, [transaction]);
@@ -74,10 +75,12 @@ export default function EditTransactionPage() {
         source: data.source || undefined,
         expenseType: data.type === 'DESPESA' ? data.expenseType : undefined,
         installmentInfo: data.isInstallment ? data.installmentInfo : undefined,
+        isOneOff: Boolean(data.isOneOff),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
+      queryClient.invalidateQueries({ queryKey: ['forecast'] });
       router.back();
     },
     onError: (e: unknown) => {
@@ -91,6 +94,7 @@ export default function EditTransactionPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
+      queryClient.invalidateQueries({ queryKey: ['forecast'] });
       router.back();
     },
   });
@@ -161,6 +165,23 @@ export default function EditTransactionPage() {
             <input type="text" value={String(form.source)} onChange={(e) => set('source', e.target.value)} placeholder="ex: Salário, Aluguel..." className={inputClass} />
           </Field>
         )}
+
+        <label className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+          form.isOneOff ? 'border-amber-300 bg-amber-50' : 'border-slate-200 hover:border-slate-300'
+        }`}>
+          <input
+            type="checkbox"
+            checked={Boolean(form.isOneOff)}
+            onChange={(e) => set('isOneOff', e.target.checked)}
+            className="w-4 h-4 mt-0.5 rounded text-amber-600"
+          />
+          <span className="flex-1">
+            <span className="block text-sm font-medium text-slate-800">🔂 Evento único</span>
+            <span className="block text-xs text-slate-500 mt-0.5">
+              Não entra na previsão do próximo mês nem no histórico de esporádicas.
+            </span>
+          </span>
+        </label>
 
         {error && <p className="text-red-500 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
 

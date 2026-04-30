@@ -27,6 +27,7 @@ export default function NewTransactionPage() {
     isInstallment: false,
     installmentCurrent: '1',
     installmentTotal: '',
+    isOneOff: false,
   });
   const [error, setError] = useState('');
   const [saveAndNew, setSaveAndNew] = useState(false);
@@ -56,10 +57,12 @@ export default function NewTransactionPage() {
         installmentInfo: data.isInstallment && data.installmentTotal
           ? `${data.installmentCurrent}/${data.installmentTotal}`
           : undefined,
+        isOneOff: data.isOneOff || undefined,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
+      queryClient.invalidateQueries({ queryKey: ['forecast'] });
       if (saveAndNew) {
         // Mantém tipo, expenseType e paymentMethod; limpa campos únicos
         setForm((f) => ({
@@ -73,6 +76,7 @@ export default function NewTransactionPage() {
           isInstallment: false,
           installmentCurrent: '1',
           installmentTotal: '',
+          isOneOff: false,
         }));
         setSuccessMsg('✅ Lançamento salvo!');
         setTimeout(() => setSuccessMsg(''), 3000);
@@ -298,6 +302,23 @@ export default function NewTransactionPage() {
             />
           </Field>
         )}
+
+        <label className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors ${
+          form.isOneOff ? 'border-amber-300 bg-amber-50' : 'border-slate-200 hover:border-slate-300'
+        }`}>
+          <input
+            type="checkbox"
+            checked={form.isOneOff}
+            onChange={(e) => set('isOneOff', e.target.checked)}
+            className="w-4 h-4 mt-0.5 rounded text-amber-600"
+          />
+          <span className="flex-1">
+            <span className="block text-sm font-medium text-slate-800">🔂 Evento único</span>
+            <span className="block text-xs text-slate-500 mt-0.5">
+              Lançamento atípico (PLR, viagem, restituição). Não entra na previsão do próximo mês nem no histórico de esporádicas.
+            </span>
+          </span>
+        </label>
 
         {successMsg && (
           <p className="text-green-700 text-sm bg-green-50 border border-green-200 rounded-lg px-3 py-2">

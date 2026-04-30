@@ -17,6 +17,7 @@ interface Transaction {
   isInstallment: boolean;
   installmentInfo?: string;
   isConfirmed: boolean;
+  isOneOff: boolean;
   category?: { name: string; color?: string };
   paymentMethod?: { name: string };
 }
@@ -105,6 +106,7 @@ export default function TransactionsPage() {
       setSelectedIds(new Set());
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
+      queryClient.invalidateQueries({ queryKey: ['forecast'] });
     },
   });
 
@@ -418,7 +420,14 @@ export default function TransactionsPage() {
                       </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(t.date)}</td>
                       <td className="px-4 py-3 text-slate-800 max-w-xs">
-                        <span className="block truncate">{t.description}</span>
+                        <span className="block truncate">
+                          {t.description}
+                          {t.isOneOff && (
+                            <span className="ml-2 text-[10px] uppercase tracking-wide bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">
+                              🔂 único
+                            </span>
+                          )}
+                        </span>
                         {t.isInstallment && t.installmentInfo && (
                           <span className="text-xs text-slate-400">Parcela {t.installmentInfo}</span>
                         )}

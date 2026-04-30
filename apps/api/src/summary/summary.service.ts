@@ -141,13 +141,15 @@ export class SummaryService {
       return { alreadyGenerated: true, nextMonth: targetMonth, nextYear: targetYear };
     }
 
-    // Busca fixas e parceladas do ciclo base (mês anterior ao alvo)
+    // Busca fixas e parceladas do ciclo base (mês anterior ao alvo).
+    // Eventos únicos (isOneOff=true) ficam de fora — usuário marcou explicitamente como não recorrente.
     const baseWhere = this.buildPeriodWhere(userId, baseYear, baseMonth, user.cycleStartDay);
     const transactions = await this.prisma.transaction.findMany({
       where: {
         AND: [
           baseWhere,
           { type: 'DESPESA' },
+          { isOneOff: false },
           { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
         ],
       },
@@ -205,12 +207,13 @@ export class SummaryService {
       await this.prisma.transaction.createMany({ data });
     }
 
-    // Conta fixas+parceladas do ciclo base para validação
+    // Conta fixas+parceladas do ciclo base para validação (alinhado: ignora one-off)
     const baseCount = await this.prisma.transaction.count({
       where: {
         AND: [
           baseWhere,
           { type: 'DESPESA' },
+          { isOneOff: false },
           { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
         ],
       },
@@ -292,13 +295,14 @@ export class SummaryService {
             baseWhere,
             { type: 'DESPESA' },
             { NOT: { expenseType: 'TERCEIROS' } },
+            { isOneOff: false },
             { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
           ],
         },
         include: { category: true },
       }),
       this.prisma.transaction.findMany({
-        where: { AND: [baseWhere, { type: 'RECEITA' }] },
+        where: { AND: [baseWhere, { type: 'RECEITA' }, { isOneOff: false }] },
       }),
     ]);
 
@@ -375,6 +379,7 @@ export class SummaryService {
         type: 'DESPESA',
         expenseType: 'ESPORADICO',
         isInstallment: false,
+        isOneOff: false,
       });
       const agg = await this.prisma.transaction.aggregate({ where: w, _sum: { amount: true } });
       samples.push({ year: y, month: m, total: Number(agg._sum.amount ?? 0) });

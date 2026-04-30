@@ -52,6 +52,7 @@ model Transaction {
   installmentInfo String?
   cycleDate       DateTime?       // período de referência (importado da coluna Ciclo da planilha)
   isConfirmed     Boolean         @default(true)  // false = réplica pendente de validação
+  isOneOff        Boolean         @default(false) // true = evento único; não entra no forecast nem no histórico de esporádicas
   userId          String
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt       DateTime        @default(now())

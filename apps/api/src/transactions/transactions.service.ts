@@ -14,6 +14,7 @@ export interface CreateTransactionDto {
   expenseType?: ExpenseType;
   isInstallment?: boolean;
   installmentInfo?: string;
+  isOneOff?: boolean;
 }
 
 export interface TransactionFiltersDto {
