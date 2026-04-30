@@ -291,6 +291,7 @@ export class SummaryService {
           AND: [
             baseWhere,
             { type: 'DESPESA' },
+            { NOT: { expenseType: 'TERCEIROS' } },
             { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
           ],
         },
@@ -393,7 +394,9 @@ export class SummaryService {
     const existingFixasTotal = sumByPredicate(
       (e) => e.type === 'DESPESA' && e.expenseType === 'FIXO' && !e.isInstallment,
     );
-    const existingInstallmentsTotal = sumByPredicate((e) => e.type === 'DESPESA' && e.isInstallment);
+    const existingInstallmentsTotal = sumByPredicate(
+      (e) => e.type === 'DESPESA' && e.isInstallment && e.expenseType !== 'TERCEIROS',
+    );
     const existingEsporadicasJaLancadas = sumByPredicate(
       (e) => e.type === 'DESPESA' && e.expenseType === 'ESPORADICO' && !e.isInstallment,
     );
@@ -416,7 +419,7 @@ export class SummaryService {
     const saldoMax = receitasCommitted - committedDespesas - esporadicasMin;
 
     const installmentsCount =
-      existing.filter((e) => e.isInstallment).length +
+      existing.filter((e) => e.isInstallment && e.expenseType !== 'TERCEIROS').length +
       projectedDespesas.filter((p) => p.reason === 'INSTALLMENT').length;
 
     return {
