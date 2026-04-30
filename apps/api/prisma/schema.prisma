@@ -8,15 +8,16 @@ datasource db {
 }
 
 model User {
-  id            String        @id @default(cuid())
-  email         String        @unique
-  password      String
-  name          String
-  cycleStartDay Int           @default(1)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  transactions  Transaction[]
-  categories    Category[]
+  id              String           @id @default(cuid())
+  email           String           @unique
+  password        String
+  name            String
+  cycleStartDay   Int              @default(1)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  transactions    Transaction[]
+  categories      Category[]
+  accountBalances AccountBalance[]
 }
 
 model Category {
@@ -72,4 +73,27 @@ enum ExpenseType {
   FIXO
   ESPORADICO
   TERCEIROS
+}
+
+model AccountBalance {
+  id            String        @id @default(cuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 1º dia do mês (UTC) — fechamento do ciclo correspondente
+  referenceDate DateTime      @db.Date
+  // saldo em conta NO FIM desse ciclo (após pagar todas as contas do mês)
+  amount        Decimal       @db.Decimal(12, 2)
+  source        BalanceSource
+  note          String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([userId, referenceDate])
+  @@index([userId, referenceDate])
+}
+
+enum BalanceSource {
+  INITIAL        // saldo inicial cadastrado pelo usuário (1 só, o mais antigo)
+  CALCULATED     // derivado: saldo do mês anterior + receitas - despesas (sem terceiros)
+  MANUAL_ADJUST  // usuário corrigiu para bater com o extrato bancário
 }

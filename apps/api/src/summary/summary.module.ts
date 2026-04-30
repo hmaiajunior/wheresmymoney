@@ -5,5 +5,6 @@ import { SummaryService } from './summary.service';
 @Module({
   controllers: [SummaryController],
   providers: [SummaryService],
+  exports: [SummaryService],
 })
 export class SummaryModule {}
