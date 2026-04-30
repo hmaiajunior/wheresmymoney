@@ -29,6 +29,39 @@ interface CategorySlice {
   count: number;
 }
 
+interface ForecastResponse {
+  year: number;
+  month: number;
+  baseYear: number;
+  baseMonth: number;
+  receitasCommitted: number;
+  fixasCommitted: number;
+  installmentsCommitted: number;
+  esporadicasJaLancadas: number;
+  committedDespesas: number;
+  esporadicasHistory: {
+    min: number;
+    max: number;
+    avg: number;
+    samples: { year: number; month: number; total: number }[];
+  };
+  saldoExpected: number;
+  saldoMin: number;
+  saldoMax: number;
+  projectedDespesas: Array<{
+    description: string;
+    amount: number;
+    categoryName: string | null;
+    categoryColor: string | null;
+    reason: 'FIXO' | 'INSTALLMENT';
+    installmentInfo?: string;
+  }>;
+  projectedReceitas: Array<{ description: string; amount: number; source: string | null }>;
+  installmentsCount: number;
+  installmentsTotal: number;
+  hasHistory: boolean;
+}
+
 const currentYear = new Date().getFullYear();
 const currentMonth = new Date().getMonth() + 1;
 const YEARS = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
@@ -65,6 +98,19 @@ export default function DashboardPage() {
     enabled: selectedMonths.length === 1,
   });
 
+  // Forecast: ancorado no mês selecionado quando há exatamente 1; caso contrário usa o mês atual.
+  const forecastAnchorMonth = selectedMonths.length === 1 ? selectedMonths[0] : currentMonth;
+  const forecastAnchorYear = selectedYear;
+  const forecastTargetMonth = forecastAnchorMonth === 12 ? 1 : forecastAnchorMonth + 1;
+  const forecastTargetYear = forecastAnchorMonth === 12 ? forecastAnchorYear + 1 : forecastAnchorYear;
+
+  const { data: forecast } = useQuery<ForecastResponse>({
+    queryKey: ['forecast', forecastTargetYear, forecastTargetMonth],
+    queryFn: () => api
+      .get(`/summary/forecast/${forecastTargetYear}/${forecastTargetMonth}`)
+      .then((r) => r.data),
+  });
+
   const cycleMutation = useMutation({
     mutationFn: () => api.post('/summary/generate-next-cycle', {
       targetMonth: cycleTarget.month,
@@ -86,6 +132,7 @@ export default function DashboardPage() {
         );
         queryClient.invalidateQueries({ queryKey: ['summary'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['forecast'] });
       }
       setTimeout(() => setCycleMsg(''), 5000);
     },
@@ -258,6 +305,9 @@ export default function DashboardPage() {
         <DetailCard label="Despesas Esporádicas" value={totals.despesasEsporadicas} pct={totals.totalDespesas > 0 ? (totals.despesasEsporadicas / totals.totalDespesas) * 100 : 0} color="bg-orange-500" />
       </div>
 
+      {/* Previsão do próximo mês */}
+      {forecast && <ForecastCard forecast={forecast} />}
+
       {/* Pizza por categoria + Top categorias — só quando exatamente 1 mês selecionado */}
       {selectedMonths.length === 1 && categorySlices && categorySlices.length > 0 && (
         <div className="grid lg:grid-cols-2 gap-4">
@@ -398,6 +448,160 @@ function SummaryCard({ label, value, color, hint }: { label: string; value: numb
       <p className="text-xs font-medium opacity-70 mb-1">{label}</p>
       <p className="text-xl font-bold">{formatCurrency(value)}</p>
       {hint && <p className="text-xs opacity-60 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+function ForecastCard({ forecast }: { forecast: ForecastResponse }) {
+  const monthLabel = `${getMonthName(forecast.month)}/${forecast.year}`;
+  const baseLabel = `${getMonthName(forecast.baseMonth)}/${forecast.baseYear}`;
+  const projectedDespesasTotal = forecast.projectedDespesas.reduce((a, p) => a + p.amount, 0);
+  const projectedReceitasTotal = forecast.projectedReceitas.reduce((a, r) => a + r.amount, 0);
+  const hasProjections = forecast.projectedDespesas.length + forecast.projectedReceitas.length > 0;
+
+  const saldoTone = forecast.saldoMin >= 0
+    ? 'emerald'
+    : forecast.saldoMax < 0
+      ? 'red'
+      : 'amber';
+
+  const toneClasses = {
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', muted: 'text-emerald-700' },
+    red:     { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-800',     muted: 'text-red-700' },
+    amber:   { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-800',   muted: 'text-amber-700' },
+  }[saldoTone];
+
+  return (
+    <div className={`rounded-xl border ${toneClasses.border} ${toneClasses.bg} p-5 space-y-4`}>
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <div>
+          <h3 className={`font-semibold ${toneClasses.text}`}>🔮 Previsão para {monthLabel}</h3>
+          <p className={`text-xs ${toneClasses.muted} opacity-80 mt-0.5`}>
+            Baseado nos compromissos e no histórico de {baseLabel}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className={`text-xs ${toneClasses.muted} opacity-70`}>Saldo projetado</p>
+          {forecast.hasHistory ? (
+            <p className={`text-xl font-bold ${toneClasses.text}`}>
+              {formatCurrency(forecast.saldoMin)} <span className="opacity-60">a</span> {formatCurrency(forecast.saldoMax)}
+            </p>
+          ) : (
+            <p className={`text-xl font-bold ${toneClasses.text}`}>{formatCurrency(forecast.saldoExpected)}</p>
+          )}
+          <p className={`text-[11px] ${toneClasses.muted} opacity-70`}>
+            esperado: {formatCurrency(forecast.saldoExpected)}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <ForecastTile label="Receitas previstas" value={forecast.receitasCommitted} accent="text-emerald-700" />
+        <ForecastTile label="Despesas fixas" value={forecast.fixasCommitted} accent="text-blue-700" />
+        <ForecastTile label="Parcelas no mês" value={forecast.installmentsCommitted} accent="text-purple-700" hint={`${forecast.installmentsCount} parcela(s)`} />
+        <ForecastTile
+          label="Esporádicas (estimativa)"
+          value={forecast.esporadicasHistory.avg}
+          accent="text-orange-700"
+          hint={forecast.hasHistory
+            ? `${formatCurrency(forecast.esporadicasHistory.min)} – ${formatCurrency(forecast.esporadicasHistory.max)}`
+            : 'sem histórico'}
+        />
+      </div>
+
+      {forecast.installmentsCount > 0 && (
+        <div className="bg-white/70 border border-purple-200 rounded-lg px-3 py-2 text-sm text-purple-800">
+          ⚠ <strong>{forecast.installmentsCount} parcela(s)</strong> totalizando <strong>{formatCurrency(forecast.installmentsTotal)}</strong> em {monthLabel}.
+        </div>
+      )}
+
+      {hasProjections && (
+        <details className="text-sm">
+          <summary className={`cursor-pointer font-medium ${toneClasses.muted} hover:opacity-80`}>
+            Ver projeção detalhada
+            <span className="ml-2 text-xs opacity-60">
+              ({forecast.projectedDespesas.length} despesa(s) · {forecast.projectedReceitas.length} receita(s) ainda não lançadas)
+            </span>
+          </summary>
+          <div className="mt-3 grid md:grid-cols-2 gap-3">
+            {forecast.projectedReceitas.length > 0 && (
+              <ForecastList
+                title="Receitas recorrentes"
+                total={projectedReceitasTotal}
+                items={forecast.projectedReceitas.map((r) => ({
+                  label: r.description,
+                  hint: r.source ?? null,
+                  amount: r.amount,
+                  badge: null,
+                  badgeColor: null,
+                }))}
+                accent="text-emerald-700"
+              />
+            )}
+            {forecast.projectedDespesas.length > 0 && (
+              <ForecastList
+                title="Despesas a replicar"
+                total={projectedDespesasTotal}
+                items={forecast.projectedDespesas.map((p) => ({
+                  label: p.description,
+                  hint: p.categoryName,
+                  amount: p.amount,
+                  badge: p.reason === 'INSTALLMENT' ? p.installmentInfo ?? 'parcela' : 'fixo',
+                  badgeColor: p.reason === 'INSTALLMENT' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700',
+                }))}
+                accent="text-red-700"
+              />
+            )}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function ForecastTile({ label, value, accent, hint }: { label: string; value: number; accent: string; hint?: string }) {
+  return (
+    <div className="bg-white/70 rounded-lg px-3 py-2 border border-white">
+      <p className="text-[11px] text-slate-500 font-medium">{label}</p>
+      <p className={`text-base font-bold ${accent}`}>{formatCurrency(value)}</p>
+      {hint && <p className="text-[10px] text-slate-500 mt-0.5">{hint}</p>}
+    </div>
+  );
+}
+
+function ForecastList({
+  title,
+  total,
+  items,
+  accent,
+}: {
+  title: string;
+  total: number;
+  accent: string;
+  items: Array<{ label: string; hint: string | null; amount: number; badge: string | null; badgeColor: string | null }>;
+}) {
+  return (
+    <div className="bg-white/70 rounded-lg p-3 border border-white">
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">{title}</p>
+        <p className={`text-sm font-bold ${accent}`}>{formatCurrency(total)}</p>
+      </div>
+      <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+        {items.map((it, i) => (
+          <li key={i} className="flex items-center justify-between gap-2 text-xs">
+            <span className="flex items-center gap-1.5 min-w-0">
+              {it.badge && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${it.badgeColor ?? 'bg-slate-100 text-slate-600'} font-mono shrink-0`}>
+                  {it.badge}
+                </span>
+              )}
+              <span className="text-slate-700 truncate">{it.label}</span>
+              {it.hint && <span className="text-slate-400 shrink-0">· {it.hint}</span>}
+            </span>
+            <span className="text-slate-700 font-medium shrink-0">{formatCurrency(it.amount)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -21,6 +21,15 @@ export class SummaryController {
     return this.summaryService.getPendingCount(req.user.id);
   }
 
+  @Get('forecast/:year/:month')
+  getForecast(
+    @Param('year', ParseIntPipe) year: number,
+    @Param('month', ParseIntPipe) month: number,
+    @Request() req: { user: { id: string } },
+  ) {
+    return this.summaryService.getForecast(req.user.id, year, month);
+  }
+
   @Get(':year/:month/by-category')
   getCategorySummary(
     @Param('year', ParseIntPipe) year: number,

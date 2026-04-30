@@ -263,4 +263,186 @@ export class SummaryService {
     });
     return { count };
   }
+
+  /**
+   * Projeção do mês alvo (geralmente o próximo) combinando:
+   *  1. Compromissos confirmados — transações já lançadas no mês alvo
+   *  2. Projeção determinística — fixas e próximas parcelas do mês base que ainda
+   *     não foram replicadas (dry-run do generateNextCycle)
+   *  3. Estimativa de esporádicas — faixa min..max e média dos últimos 3 meses
+   *  4. Receitas recorrentes — replica receitas do mês base ausentes no alvo
+   */
+  async getForecast(userId: string, year: number, month: number) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+    const baseMonth = month === 1 ? 12 : month - 1;
+    const baseYear = month === 1 ? year - 1 : year;
+
+    const targetWhere = this.buildPeriodWhere(userId, year, month, user.cycleStartDay);
+    const baseWhere = this.buildPeriodWhere(userId, baseYear, baseMonth, user.cycleStartDay);
+
+    const [existing, baseRecurring, baseReceitas] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: targetWhere,
+        include: { category: true },
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          AND: [
+            baseWhere,
+            { type: 'DESPESA' },
+            { OR: [{ expenseType: 'FIXO' }, { isInstallment: true }] },
+          ],
+        },
+        include: { category: true },
+      }),
+      this.prisma.transaction.findMany({
+        where: { AND: [baseWhere, { type: 'RECEITA' }] },
+      }),
+    ]);
+
+    const existingByKey = new Map<string, true>();
+    for (const e of existing) {
+      // chave dedupe: descrição + (installmentInfo || expenseType) — distingue fixa de parcela
+      existingByKey.set(`${e.description}::${e.installmentInfo ?? e.expenseType ?? ''}`, true);
+    }
+
+    const projectedDespesas: Array<{
+      description: string;
+      amount: number;
+      categoryId: string | null;
+      categoryName: string | null;
+      categoryColor: string | null;
+      reason: 'FIXO' | 'INSTALLMENT';
+      installmentInfo?: string;
+    }> = [];
+
+    for (const t of baseRecurring) {
+      if (t.expenseType === 'FIXO' && !t.isInstallment) {
+        const key = `${t.description}::FIXO`;
+        if (existingByKey.has(key)) continue;
+        projectedDespesas.push({
+          description: t.description,
+          amount: Number(t.amount),
+          categoryId: t.categoryId,
+          categoryName: t.category?.name ?? null,
+          categoryColor: t.category?.color ?? null,
+          reason: 'FIXO',
+        });
+      } else if (t.isInstallment && t.installmentInfo) {
+        const match = t.installmentInfo.match(/^(\d+)\/(\d+)$/);
+        if (!match) continue;
+        const current = parseInt(match[1], 10);
+        const total = parseInt(match[2], 10);
+        if (current >= total) continue;
+        const nextInfo = `${current + 1}/${total}`;
+        const key = `${t.description}::${nextInfo}`;
+        if (existingByKey.has(key)) continue;
+        projectedDespesas.push({
+          description: t.description,
+          amount: Number(t.amount),
+          categoryId: t.categoryId,
+          categoryName: t.category?.name ?? null,
+          categoryColor: t.category?.color ?? null,
+          reason: 'INSTALLMENT',
+          installmentInfo: nextInfo,
+        });
+      }
+    }
+
+    const existingReceitasDescriptions = new Set(
+      existing.filter((e) => e.type === 'RECEITA').map((e) => e.description),
+    );
+    const projectedReceitas = baseReceitas
+      .filter((r) => !existingReceitasDescriptions.has(r.description))
+      .map((r) => ({
+        description: r.description,
+        amount: Number(r.amount),
+        source: r.source,
+      }));
+
+    // Histórico das esporádicas — últimas 3 competências fechadas
+    const samples: { year: number; month: number; total: number }[] = [];
+    for (let i = 1; i <= 3; i++) {
+      let m = month - i;
+      let y = year;
+      if (m <= 0) {
+        m += 12;
+        y -= 1;
+      }
+      const w = this.buildPeriodWhere(userId, y, m, user.cycleStartDay, {
+        type: 'DESPESA',
+        expenseType: 'ESPORADICO',
+        isInstallment: false,
+      });
+      const agg = await this.prisma.transaction.aggregate({ where: w, _sum: { amount: true } });
+      samples.push({ year: y, month: m, total: Number(agg._sum.amount ?? 0) });
+    }
+    const validSamples = samples.filter((s) => s.total > 0).map((s) => s.total);
+    const esporadicasMin = validSamples.length ? Math.min(...validSamples) : 0;
+    const esporadicasMax = validSamples.length ? Math.max(...validSamples) : 0;
+    const esporadicasAvg = validSamples.length
+      ? validSamples.reduce((a, b) => a + b, 0) / validSamples.length
+      : 0;
+
+    // Totais do mês alvo já existentes
+    const sumByPredicate = (predicate: (e: (typeof existing)[number]) => boolean) =>
+      existing.filter(predicate).reduce((acc, t) => acc + Number(t.amount), 0);
+
+    const existingReceitasTotal = sumByPredicate((e) => e.type === 'RECEITA');
+    const existingFixasTotal = sumByPredicate(
+      (e) => e.type === 'DESPESA' && e.expenseType === 'FIXO' && !e.isInstallment,
+    );
+    const existingInstallmentsTotal = sumByPredicate((e) => e.type === 'DESPESA' && e.isInstallment);
+    const existingEsporadicasJaLancadas = sumByPredicate(
+      (e) => e.type === 'DESPESA' && e.expenseType === 'ESPORADICO' && !e.isInstallment,
+    );
+
+    const projectedFixasTotal = projectedDespesas
+      .filter((p) => p.reason === 'FIXO')
+      .reduce((a, p) => a + p.amount, 0);
+    const projectedInstallmentsTotal = projectedDespesas
+      .filter((p) => p.reason === 'INSTALLMENT')
+      .reduce((a, p) => a + p.amount, 0);
+    const projectedReceitasTotal = projectedReceitas.reduce((a, r) => a + r.amount, 0);
+
+    const receitasCommitted = existingReceitasTotal + projectedReceitasTotal;
+    const fixasCommitted = existingFixasTotal + projectedFixasTotal;
+    const installmentsCommitted = existingInstallmentsTotal + projectedInstallmentsTotal;
+    const committedDespesas = fixasCommitted + installmentsCommitted + existingEsporadicasJaLancadas;
+
+    const saldoExpected = receitasCommitted - committedDespesas - esporadicasAvg;
+    const saldoMin = receitasCommitted - committedDespesas - esporadicasMax;
+    const saldoMax = receitasCommitted - committedDespesas - esporadicasMin;
+
+    const installmentsCount =
+      existing.filter((e) => e.isInstallment).length +
+      projectedDespesas.filter((p) => p.reason === 'INSTALLMENT').length;
+
+    return {
+      year,
+      month,
+      baseYear,
+      baseMonth,
+      receitasCommitted,
+      fixasCommitted,
+      installmentsCommitted,
+      esporadicasJaLancadas: existingEsporadicasJaLancadas,
+      committedDespesas,
+      esporadicasHistory: {
+        min: esporadicasMin,
+        max: esporadicasMax,
+        avg: esporadicasAvg,
+        samples,
+      },
+      saldoExpected,
+      saldoMin,
+      saldoMax,
+      projectedDespesas,
+      projectedReceitas,
+      installmentsCount,
+      installmentsTotal: installmentsCommitted,
+      hasHistory: validSamples.length > 0,
+    };
+  }
 }
