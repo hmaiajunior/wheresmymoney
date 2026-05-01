@@ -95,7 +95,10 @@ export default function TransactionsPage() {
 
   const confirmMutation = useMutation({
     mutationFn: (id: string) => api.patch(`/transactions/${id}/confirm`).then((r) => r.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['summary'] });
+    },
   });
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -107,6 +110,8 @@ export default function TransactionsPage() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
       queryClient.invalidateQueries({ queryKey: ['forecast'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance-year'] });
     },
   });
 
