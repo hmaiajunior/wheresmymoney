@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { BalanceSource, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SummaryService } from '../summary/summary.service';
@@ -30,11 +30,8 @@ export class AccountsService {
   /**
    * Resolve o saldo em conta no FIM do ciclo (year, month).
    *
-   * Cadeia de resolução:
-   *  1. Se existe registro INITIAL ou MANUAL_ADJUST nesse mês → usa o valor.
-   *  2. Senão, calcula: saldoEmConta(m-1) + saldoCiclo(m), persiste como CALCULATED.
-   *  3. Limite de recursão de 24 meses para trás — se nada for encontrado,
-   *     marca incomplete=true e usa 0 como ponto de partida.
+   * A tabela armazena apenas registros INITIAL e MANUAL_ADJUST. Tudo entre
+   * dois pontos de verdade é calculado em memória.
    */
   async getOrCalculate(userId: string, year: number, month: number): Promise<AccountBalanceResult> {
     const hasInitial = (await this.prisma.accountBalance.count({
@@ -45,9 +42,104 @@ export class AccountsService {
     return { ...result, hasInitial };
   }
 
+  /** Lista 12 meses do ano (alimenta a coluna "Em conta" da tabela mensal). */
+  async getYearHistory(userId: string, year: number): Promise<AccountBalanceResult[]> {
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+    return Promise.all(months.map((m) => this.getOrCalculate(userId, year, m)));
+  }
+
+  async setInitial(userId: string, year: number, month: number, amount: number): Promise<AccountBalanceResult> {
+    const existing = await this.prisma.accountBalance.findFirst({
+      where: { userId, source: 'INITIAL' },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'Já existe um saldo inicial cadastrado. Remova-o antes de cadastrar outro.',
+      );
+    }
+    const referenceDate = this.firstOfMonth(year, month);
+    await this.prisma.accountBalance.upsert({
+      where: { userId_referenceDate: { userId, referenceDate } },
+      create: {
+        userId,
+        referenceDate,
+        amount: new Prisma.Decimal(amount.toFixed(2)),
+        source: 'INITIAL',
+      },
+      // Se já existir um MANUAL_ADJUST/CALCULATED nesse mês, vira INITIAL
+      update: {
+        amount: new Prisma.Decimal(amount.toFixed(2)),
+        source: 'INITIAL',
+      },
+    });
+    return this.getOrCalculate(userId, year, month);
+  }
+
+  async setManualAdjust(
+    userId: string,
+    year: number,
+    month: number,
+    amount: number,
+    note?: string,
+  ): Promise<AccountBalanceResult> {
+    const referenceDate = this.firstOfMonth(year, month);
+    const existing = await this.prisma.accountBalance.findUnique({
+      where: { userId_referenceDate: { userId, referenceDate } },
+    });
+    if (existing?.source === 'INITIAL') {
+      throw new BadRequestException(
+        'Esse mês é o saldo inicial. Para ajustar, remova o inicial e recadastre.',
+      );
+    }
+    await this.prisma.accountBalance.upsert({
+      where: { userId_referenceDate: { userId, referenceDate } },
+      create: {
+        userId,
+        referenceDate,
+        amount: new Prisma.Decimal(amount.toFixed(2)),
+        source: 'MANUAL_ADJUST',
+        note: note ?? null,
+      },
+      update: {
+        amount: new Prisma.Decimal(amount.toFixed(2)),
+        source: 'MANUAL_ADJUST',
+        note: note ?? null,
+      },
+    });
+    return this.getOrCalculate(userId, year, month);
+  }
+
+  async deleteAdjust(userId: string, year: number, month: number): Promise<{ removed: boolean }> {
+    const referenceDate = this.firstOfMonth(year, month);
+    const existing = await this.prisma.accountBalance.findUnique({
+      where: { userId_referenceDate: { userId, referenceDate } },
+    });
+    if (!existing) {
+      throw new NotFoundException('Não existe ajuste para esse mês.');
+    }
+    if (existing.source !== 'MANUAL_ADJUST') {
+      throw new BadRequestException(
+        'Só é possível remover ajustes manuais por aqui. Para remover INITIAL, use o endpoint dedicado.',
+      );
+    }
+    await this.prisma.accountBalance.delete({ where: { id: existing.id } });
+    return { removed: true };
+  }
+
+  async deleteInitial(userId: string): Promise<{ removed: boolean }> {
+    const existing = await this.prisma.accountBalance.findFirst({
+      where: { userId, source: 'INITIAL' },
+    });
+    if (!existing) {
+      throw new NotFoundException('Não há saldo inicial cadastrado.');
+    }
+    await this.prisma.accountBalance.delete({ where: { id: existing.id } });
+    return { removed: true };
+  }
+
   /**
-   * Lê o saldo do mês anterior (recursivo) sem persistir; usado tanto para
-   * meses CALCULATED quanto para informar `saldoAnterior` no retorno.
+   * Recursivo: busca INITIAL/MANUAL_ADJUST como ground truth;
+   * caso contrário, soma o saldo do mês anterior + saldoCiclo atual.
    */
   private async resolveBalance(
     userId: string,
@@ -57,61 +149,49 @@ export class AccountsService {
   ): Promise<Omit<AccountBalanceResult, 'hasInitial'>> {
     const referenceDate = this.firstOfMonth(year, month);
 
-    // Se há registro persistido (qualquer source), começamos por ele
     const existing = await this.prisma.accountBalance.findUnique({
       where: { userId_referenceDate: { userId, referenceDate } },
     });
 
-    // INITIAL e MANUAL_ADJUST são "ground truth" — não precisam recalcular
-    if (existing && (existing.source === 'INITIAL' || existing.source === 'MANUAL_ADJUST')) {
-      const cycleSummary = await this.summaryService.getSummary(userId, year, month);
-      const saldoCicloAtual = cycleSummary.saldo;
-      const prev = await this.peekPreviousBalance(userId, year, month, depth);
-      const saldoCalculado = (prev?.saldoEmConta ?? 0) + saldoCicloAtual;
-      const saldoEmConta = Number(existing.amount);
-      return {
-        year,
-        month,
-        saldoCicloAtual,
-        saldoAnterior: prev?.saldoEmConta ?? null,
-        saldoCalculado,
-        saldoEmConta,
-        source: existing.source,
-        divergence: existing.source === 'MANUAL_ADJUST' ? saldoEmConta - saldoCalculado : null,
-        note: existing.note,
-        incomplete: prev?.incomplete ?? false,
-      };
-    }
-
-    // Sem registro ou registro CALCULATED — derivamos a partir do mês anterior
     const cycleSummary = await this.summaryService.getSummary(userId, year, month);
     const saldoCicloAtual = cycleSummary.saldo;
 
+    if (existing && existing.source === 'INITIAL') {
+      // INITIAL: o próprio mês é o ponto de partida (não soma com mês anterior).
+      const saldoEmConta = Number(existing.amount);
+      return {
+        year, month, saldoCicloAtual,
+        saldoAnterior: null,
+        saldoCalculado: saldoEmConta, // por convenção, INITIAL define o ponto
+        saldoEmConta,
+        source: 'INITIAL',
+        divergence: null,
+        note: existing.note,
+        incomplete: false,
+      };
+    }
+
     const prev = await this.peekPreviousBalance(userId, year, month, depth);
     const saldoAnterior = prev?.saldoEmConta ?? 0;
-    const incomplete = prev?.incomplete ?? !prev;
+    const incomplete = prev ? prev.incomplete : true;
     const saldoCalculado = saldoAnterior + saldoCicloAtual;
 
-    // Cache: persistimos ou atualizamos o CALCULATED para o mês alvo
-    await this.prisma.accountBalance.upsert({
-      where: { userId_referenceDate: { userId, referenceDate } },
-      create: {
-        userId,
-        referenceDate,
-        amount: new Prisma.Decimal(saldoCalculado.toFixed(2)),
-        source: 'CALCULATED',
-      },
-      update: {
-        amount: new Prisma.Decimal(saldoCalculado.toFixed(2)),
-        source: 'CALCULATED',
-        note: null,
-      },
-    });
+    if (existing && existing.source === 'MANUAL_ADJUST') {
+      const saldoEmConta = Number(existing.amount);
+      return {
+        year, month, saldoCicloAtual,
+        saldoAnterior: prev?.saldoEmConta ?? null,
+        saldoCalculado,
+        saldoEmConta,
+        source: 'MANUAL_ADJUST',
+        divergence: saldoEmConta - saldoCalculado,
+        note: existing.note,
+        incomplete,
+      };
+    }
 
     return {
-      year,
-      month,
-      saldoCicloAtual,
+      year, month, saldoCicloAtual,
       saldoAnterior: prev?.saldoEmConta ?? null,
       saldoCalculado,
       saldoEmConta: saldoCalculado,
@@ -122,10 +202,6 @@ export class AccountsService {
     };
   }
 
-  /**
-   * Resolve o saldo do mês imediatamente anterior, respeitando o limite de
-   * profundidade. Retorna null quando esgotamos o lookback sem achar INITIAL.
-   */
   private async peekPreviousBalance(
     userId: string,
     year: number,
@@ -137,39 +213,11 @@ export class AccountsService {
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
 
-    // Atalho: se o mês anterior tem INITIAL/MANUAL_ADJUST/CALCULATED, lemos direto
-    const prevReference = this.firstOfMonth(prevYear, prevMonth);
-    const prev = await this.prisma.accountBalance.findUnique({
-      where: { userId_referenceDate: { userId, referenceDate: prevReference } },
-    });
-
-    if (prev && (prev.source === 'INITIAL' || prev.source === 'MANUAL_ADJUST')) {
-      return { saldoEmConta: Number(prev.amount), incomplete: false };
-    }
-
-    // CALCULATED ou ausente → recalcula recursivamente
     const resolved = await this.resolveBalance(userId, prevYear, prevMonth, depth + 1);
     return { saldoEmConta: resolved.saldoEmConta, incomplete: resolved.incomplete };
   }
 
-  /** 1º dia do mês às 00:00 UTC — chave de unicidade do AccountBalance */
   private firstOfMonth(year: number, month: number): Date {
     return new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0));
-  }
-
-  /**
-   * Invalida (remove) os registros CALCULATED a partir de uma data — usado
-   * quando uma transação muda no passado ou o usuário ajusta um mês manualmente.
-   * INITIAL e MANUAL_ADJUST são preservados.
-   */
-  async invalidateCalculatedFrom(userId: string, year: number, month: number): Promise<void> {
-    const from = this.firstOfMonth(year, month);
-    await this.prisma.accountBalance.deleteMany({
-      where: {
-        userId,
-        source: 'CALCULATED',
-        referenceDate: { gte: from },
-      },
-    });
   }
 }

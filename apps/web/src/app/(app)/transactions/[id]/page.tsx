@@ -81,6 +81,8 @@ export default function EditTransactionPage() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
       queryClient.invalidateQueries({ queryKey: ['forecast'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance-year'] });
       router.back();
     },
     onError: (e: unknown) => {
@@ -95,6 +97,8 @@ export default function EditTransactionPage() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
       queryClient.invalidateQueries({ queryKey: ['forecast'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance-year'] });
       router.back();
     },
   });

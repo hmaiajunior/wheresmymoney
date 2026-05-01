@@ -6,6 +6,13 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { api } from '@/lib/api';
 import { formatCurrency, getMonthName } from '@/lib/format';
 import Link from 'next/link';
+import {
+  AccountBalanceCard,
+  AccountBalanceDto,
+  EditBalanceModal,
+  InitialBalanceBanner,
+  InitialBalanceModal,
+} from '@/components/AccountBalance';
 
 interface MonthlySummary {
   year: number;
@@ -111,6 +118,23 @@ export default function DashboardPage() {
       .then((r) => r.data),
   });
 
+  const balanceAnchorMonth = selectedMonths.length === 1 ? selectedMonths[0] : currentMonth;
+  const balanceAnchorYear = selectedYear;
+  const { data: accountBalance } = useQuery<AccountBalanceDto>({
+    queryKey: ['account-balance', balanceAnchorYear, balanceAnchorMonth],
+    queryFn: () => api
+      .get(`/accounts/balance/${balanceAnchorYear}/${balanceAnchorMonth}`)
+      .then((r) => r.data),
+  });
+
+  const { data: balanceYear } = useQuery<AccountBalanceDto[]>({
+    queryKey: ['account-balance-year', selectedYear],
+    queryFn: () => api.get(`/accounts/balance/year/${selectedYear}`).then((r) => r.data),
+  });
+
+  const [showInitialModal, setShowInitialModal] = useState(false);
+  const [editingMonth, setEditingMonth] = useState<AccountBalanceDto | null>(null);
+
   const cycleMutation = useMutation({
     mutationFn: () => api.post('/summary/generate-next-cycle', {
       targetMonth: cycleTarget.month,
@@ -133,6 +157,8 @@ export default function DashboardPage() {
         queryClient.invalidateQueries({ queryKey: ['summary'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
         queryClient.invalidateQueries({ queryKey: ['forecast'] });
+        queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+        queryClient.invalidateQueries({ queryKey: ['account-balance-year'] });
       }
       setTimeout(() => setCycleMsg(''), 5000);
     },
@@ -177,6 +203,12 @@ export default function DashboardPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+      {accountBalance && !accountBalance.hasInitial && (
+        <InitialBalanceBanner onCadastrar={() => setShowInitialModal(true)} />
+      )}
+      {showInitialModal && <InitialBalanceModal onClose={() => setShowInitialModal(false)} />}
+      {editingMonth && <EditBalanceModal balance={editingMonth} onClose={() => setEditingMonth(null)} />}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
@@ -283,6 +315,9 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+
+      {/* Saldo em conta */}
+      {accountBalance && <AccountBalanceCard balance={accountBalance} />}
 
       {/* Cards principais */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -393,24 +428,46 @@ export default function DashboardPage() {
                   <th className="text-right px-4 py-3 font-medium">Fixas</th>
                   <th className="text-right px-4 py-3 font-medium">Esporád.</th>
                   <th className="text-right px-4 py-3 font-medium">Total Desp.</th>
-                  <th className="text-right px-6 py-3 font-medium">Saldo</th>
+                  <th className="text-right px-4 py-3 font-medium">Saldo</th>
+                  <th className="text-right px-6 py-3 font-medium">Em conta</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visibleSummaries.map((s) => (
-                  <tr key={s.month} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-3 font-medium text-slate-800">
-                      {getMonthName(s.month)} {s.year}
-                    </td>
-                    <td className="px-4 py-3 text-right text-emerald-700 font-medium">{formatCurrency(s.receitas)}</td>
-                    <td className="px-4 py-3 text-right text-blue-700">{formatCurrency(s.despesasFixas)}</td>
-                    <td className="px-4 py-3 text-right text-orange-700">{formatCurrency(s.despesasEsporadicas)}</td>
-                    <td className="px-4 py-3 text-right text-red-700 font-medium">{formatCurrency(s.totalDespesas)}</td>
-                    <td className={`px-6 py-3 text-right font-semibold ${s.saldo >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
-                      {formatCurrency(s.saldo)}
-                    </td>
-                  </tr>
-                ))}
+                {visibleSummaries.map((s) => {
+                  const balance = balanceYear?.find((b) => b.month === s.month);
+                  return (
+                    <tr key={s.month} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-3 font-medium text-slate-800">
+                        {getMonthName(s.month)} {s.year}
+                      </td>
+                      <td className="px-4 py-3 text-right text-emerald-700 font-medium">{formatCurrency(s.receitas)}</td>
+                      <td className="px-4 py-3 text-right text-blue-700">{formatCurrency(s.despesasFixas)}</td>
+                      <td className="px-4 py-3 text-right text-orange-700">{formatCurrency(s.despesasEsporadicas)}</td>
+                      <td className="px-4 py-3 text-right text-red-700 font-medium">{formatCurrency(s.totalDespesas)}</td>
+                      <td className={`px-4 py-3 text-right font-semibold ${s.saldo >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {formatCurrency(s.saldo)}
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        {balance ? (
+                          <button
+                            onClick={() => setEditingMonth(balance)}
+                            className="inline-flex items-center gap-1.5 hover:bg-slate-100 rounded px-2 py-0.5 transition-colors"
+                            title="Ajustar saldo desse mês"
+                          >
+                            <span className={`tabular-nums font-semibold ${balance.saldoEmConta >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                              {formatCurrency(balance.saldoEmConta)}
+                            </span>
+                            <span className="text-xs">
+                              {balance.source === 'INITIAL' ? '🏁' : balance.source === 'MANUAL_ADJUST' ? '✏️' : '📌'}
+                            </span>
+                          </button>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               {selectedMonths.length !== 1 && visibleSummaries.length > 1 && (
                 <tfoot>
@@ -420,9 +477,10 @@ export default function DashboardPage() {
                     <td className="px-4 py-3 text-right text-blue-700">{formatCurrency(totals.despesasFixas)}</td>
                     <td className="px-4 py-3 text-right text-orange-700">{formatCurrency(totals.despesasEsporadicas)}</td>
                     <td className="px-4 py-3 text-right text-red-700">{formatCurrency(totals.totalDespesas)}</td>
-                    <td className={`px-6 py-3 text-right ${totals.saldo >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    <td className={`px-4 py-3 text-right ${totals.saldo >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                       {formatCurrency(totals.saldo)}
                     </td>
+                    <td className="px-6 py-3" />
                   </tr>
                 </tfoot>
               )}

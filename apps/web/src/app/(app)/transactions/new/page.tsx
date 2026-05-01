@@ -63,6 +63,8 @@ export default function NewTransactionPage() {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['summary'] });
       queryClient.invalidateQueries({ queryKey: ['forecast'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['account-balance-year'] });
       if (saveAndNew) {
         // Mantém tipo, expenseType e paymentMethod; limpa campos únicos
         setForm((f) => ({
